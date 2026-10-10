@@ -1,0 +1,10 @@
+/* Demo-only additions. The workbench and report styles are generated from static/. */
+.demo-notice { margin: -15px 0 26px; padding: 8px 12px; border-left: 2px solid #b4c6b9; background: #f4f7f3; color: #627168; font-size: 13px; line-height: 1.5; }
+.demo-sample-action { display: flex; justify-content: flex-end; margin-top: 9px; }
+.demo-sample-action .text-button { font-size: 13px; }
+.demo-local-settings { max-width: 620px; }
+.demo-local-settings p { color: #626b78; font-size: 15px; line-height: 1.65; margin: 18px 0 24px; }
+.demo-local-settings a { text-decoration: none; }
+.report-header-meta { color: #245448; }
+.report-page { width: min(210mm, 100%); }
+@media print { .demo-notice { display: none !important; } .report-page { width: 182mm; } }

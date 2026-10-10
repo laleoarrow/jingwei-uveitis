@@ -113,7 +113,6 @@ select { cursor: pointer; }
 .settings-card > h2 { margin-bottom: 27px; font-size: 15px; }
 .weight-setting { margin-bottom: 26px; }
 .weight-heading { display: flex; align-items: baseline; gap: 17px; margin-bottom: 12px; }
-.weight-heading p { margin: 0; color: #9a9fa9; font-size: 14px; }
 .weight-state { margin-left: auto; color: #8b9791; font-size: 14px; }
 .weight-state.missing { color: #bd806c; }
 .weight-setting input { font: 13px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; padding: 14px; }

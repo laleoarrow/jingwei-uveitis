@@ -70,7 +70,6 @@ function renderHealth() {
     const label = $(`${modality}WeightState`);
     label.textContent = model ? model.exists ? 'Model ready' : 'Weights not found' : 'Disconnected';
     label.className = `weight-state ${model?.exists ? 'present' : 'missing'}`;
-    if (model?.name) $(`${modality}ModelName`).textContent = model.name;
   }
   const model = health?.models?.[state.modality];
   $('activeModelStatus').textContent = model ? model.exists ? 'Model ready' : 'Weights not found' : 'Disconnected';
