@@ -8,7 +8,7 @@ import shutil
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "static"
 DOCS = ROOT / "docs"
-VERSION = "workbench-demo-2"
+VERSION = "workbench-demo-3"
 
 
 def replace_once(text, old, new):
@@ -31,7 +31,7 @@ html, count = re.subn(r'  <script src="/app\.js(?:\?[^\"]*)?" defer></script>', 
 assert count == 1, 'Review the local application script link.'
 html = html.replace('src="/jingwei-wordmark.svg', 'src="jingwei-wordmark.svg')
 html = replace_once(html, '  <title>JingWei System</title>', '  <title>JingWei System · Demo</title>\n  <meta http-equiv="Content-Security-Policy" content="default-src \'self\'; script-src \'self\'; style-src \'self\' \'unsafe-inline\'; img-src \'self\' blob: data:; connect-src \'none\'; font-src \'none\'; object-src \'none\'; base-uri \'self\'; form-action \'none\'">')
-html = replace_once(html, '    <main>\n', '    <main>\n      <p class="demo-notice">Demo · GitHub Pages does not run analysis. Results are illustrative.</p>\n')
+html = replace_once(html, '    <main>\n', '    <main>\n      <aside class="demo-notice" aria-label="Demo notice"><span class="demo-notice-badge">Demo only</span><div class="demo-notice-copy"><strong>No image analysis is performed.</strong><span>Results are fixed examples, not predictions from your image.</span></div></aside>\n')
 html = replace_once(html, 'accept=".jpg,.jpeg,.png,.tif,.tiff,.webp,image/jpeg,image/png,image/tiff,image/webp"', 'accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"')
 html = replace_once(html, '            <div class="image-fileline">', '            <div class="demo-sample-action"><button class="text-button" id="useDemoSample" type="button">Use sample</button></div>\n            <div class="image-fileline">')
 html = html.replace('<span>This image</span>', '<span>Demo result</span>')
