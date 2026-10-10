@@ -1,5 +1,9 @@
 /* Demo-only additions. The workbench and report styles are generated from static/. */
-.demo-notice { margin: -15px 0 26px; padding: 8px 12px; border-left: 2px solid #b4c6b9; background: #f4f7f3; color: #627168; font-size: 13px; line-height: 1.5; }
+.demo-notice { display: flex; align-items: center; gap: 16px; margin: -15px 0 26px; padding: 16px 20px; border: 1px solid #bfd6c7; border-left: 4px solid #245448; border-radius: 4px; background: #edf5ef; color: #183e34; line-height: 1.5; }
+.demo-notice-badge { flex-shrink: 0; padding: 5px 9px; border-radius: 3px; background: #245448; color: #fff; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.demo-notice-copy strong { display: block; font-size: 16px; font-weight: 600; }
+.demo-notice-copy > span { display: block; margin-top: 2px; color: #365b4e; font-size: 14px; }
+@media (max-width: 600px) { .demo-notice { align-items: flex-start; flex-direction: column; gap: 9px; padding: 14px 16px; } }
 .demo-sample-action { display: flex; justify-content: flex-end; margin-top: 9px; }
 .demo-sample-action .text-button { font-size: 13px; }
 .demo-local-settings { max-width: 620px; }
