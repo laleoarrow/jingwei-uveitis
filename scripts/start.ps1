@@ -14,7 +14,6 @@ try {
 
     Write-Host 'First-time setup: preparing Python and dependencies. Keep this window open.'
     $env:UV_UNMANAGED_INSTALL = Join-Path $PWD '.bootstrap\bin'
-    $env:UV_INSTALLER_GITHUB_BASE_URL = 'https://github.com'
     $env:UV_PYTHON_INSTALL_DIR = Join-Path $PWD '.bootstrap\python'
     $env:UV_CACHE_DIR = Join-Path $PWD '.bootstrap\cache'
     $env:UV_PYTHON_INSTALL_BIN = '0'
