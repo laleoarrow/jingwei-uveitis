@@ -11,10 +11,10 @@ A local image-assessment workbench for retinal vascular leakage (RVL) in uveitis
 | Model inference | Real, with separately supplied compatible weights | None |
 | Results | RVL Score and predicted probability from the image | Fixed illustrative example |
 | Images | Processed by your local Python service | Stay in the browser |
-| Reference distribution | Bundled aggregate Figure 2 reference data | Synthetic illustration |
+| Reference distribution | Bundled aggregate Figure 2 reference data | Same aggregate reference data; illustrative result marker |
 | Report | Image assessment report; optional contributing-region maps | Clearly marked demonstration report |
 
-The website demonstrates the workflow. Its numbers are **not calculated from uploaded images** and are not assessment results.
+The website opens directly to the workbench and demonstrates image selection and report generation. Its result numbers are **not calculated from uploaded images** and are not assessment results. The demo accepts JPEG, PNG and WebP; TIFF and model settings are available in the local application.
 
 ## Run locally
 
@@ -88,7 +88,7 @@ reference.py / data/            Aggregate reference distributions
 vendor/                         Extracted model and attribution definitions
 static/                         Local workbench and printable report
 launch.py / start.*              Local startup
-scripts/                        Offline aggregate reference export
+scripts/                        Demo build and offline aggregate reference export
 docs/                          Public static website and demonstration
 runtime/                        Local settings and QA output (ignored)
 weights/                        Optional local weights (ignored)
@@ -99,10 +99,11 @@ weights/                        Optional local weights (ignored)
 ```sh
 python -m unittest discover -s . -p 'test_*.py'
 node --check static/app.js
+python scripts/build_demo.py
 python -m http.server 8080 --directory docs
 ```
 
-The tests do not require trained checkpoints or private research data. GitHub Pages serves only `docs/` from `main`; it never runs Python or exposes the local API. The application service binds only to loopback and is not configured as a multi-user hospital deployment.
+The tests do not require trained checkpoints or private research data. Rebuild the demo after changing the local workbench: the build reuses its layout and report, with a browser-only adapter for illustrative results. GitHub Pages serves only `docs/` from `main`; it never runs Python or exposes the local API. The application service binds only to loopback and is not configured as a multi-user hospital deployment.
 
 ## Licensing and acknowledgements
 

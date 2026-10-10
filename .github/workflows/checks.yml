@@ -26,3 +26,7 @@ jobs:
         run: |
           node --check static/app.js
           find docs -name '*.js' -exec node --check {} \;
+      - name: Check generated demo
+        run: |
+          python scripts/build_demo.py
+          git diff --exit-code -- docs
