@@ -1,6 +1,6 @@
 # JingWei · 精卫
 
-An offline system for predicting retinal vascular leakage (RVL) in uveitis from colour fundus photography (CFP) or optical coherence tomography (OCT). Outputs include RVL scores, predicted probabilities and assessment reports.
+JingWei: non-invasive prediction system of retinal vascular leakage in uveitis from fundus photography or OCT.
 
 **[Online demo](https://laleoarrow.github.io/jingwei-uveitis/) · [Installation](#installation)**
 
@@ -8,7 +8,7 @@ The online demo illustrates the workflow and report format without analysing ima
 
 ## Installation
 
-Requires Python 3.12. Clone the repository:
+Model inference runs offline. Install Python 3.12, then clone the repository:
 
 ```sh
 git clone https://github.com/laleoarrow/jingwei-uveitis.git
