@@ -215,7 +215,7 @@ function showPreview(mode) {
 async function analyzeFile(file) {
   if (!file) return;
   const extension = file.name.split('.').pop().toLowerCase();
-  const isTiff = false; // TIFF decoding requires the local application.
+  const isTiff = false; // TIFF decoding requires the offline application.
   if (!isTiff && !['jpg', 'jpeg', 'png', 'webp'].includes(extension)) {
     invalidatePrediction();
     setNotice('predictionError', 'Choose a JPG, PNG or WebP image.', true);
