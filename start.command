@@ -21,7 +21,6 @@ fi
 
 echo 'First-time setup: preparing Python and dependencies. Keep this window open.'
 export UV_UNMANAGED_INSTALL="$PWD/.bootstrap/bin"
-export UV_INSTALLER_GITHUB_BASE_URL=https://github.com
 export UV_PYTHON_INSTALL_DIR="$PWD/.bootstrap/python"
 export UV_CACHE_DIR="$PWD/.bootstrap/cache"
 export UV_PYTHON_INSTALL_BIN=0
