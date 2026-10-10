@@ -1,9 +1,7 @@
 @echo off
+setlocal
 cd /d "%~dp0"
-if not exist ".venv\Scripts\python.exe" (
-  echo Please install the environment first. See README.md.
-  pause
-  exit /b 1
-)
-".venv\Scripts\python.exe" launch.py %*
-if errorlevel 1 pause
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\start.ps1" %*
+set "jingwei_exit=%errorlevel%"
+if not "%jingwei_exit%"=="0" if not defined CI pause
+exit /b %jingwei_exit%
