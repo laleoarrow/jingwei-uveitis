@@ -1,22 +1,12 @@
 # JingWei · 精卫
 
-A local image-assessment workbench for retinal vascular leakage (RVL) in uveitis. Select a CFP or OCT image, view the model output against reference distributions, and generate a printable clinical assessment report.
+An offline system for predicting retinal vascular leakage (RVL) in uveitis from colour fundus photography (CFP) or optical coherence tomography (OCT). Outputs include RVL scores, predicted probabilities and assessment reports.
 
-**[Website & interactive demo](https://laleoarrow.github.io/jingwei-uveitis/) · [Source](https://github.com/laleoarrow/jingwei-uveitis)**
+**[Online demo](https://laleoarrow.github.io/jingwei-uveitis/) · [Installation](#offline-use)**
 
-## Two ways to explore
+Offline inference requires compatible model weights. The online demo illustrates the workflow and report format without analysing images.
 
-| | Local application | Website demo |
-|---|---|---|
-| Model inference | Real, with separately supplied compatible weights | None |
-| Results | RVL Score and predicted probability from the image | Fixed illustrative example |
-| Images | Processed by your local Python service | Stay in the browser |
-| Reference distribution | Bundled aggregate Figure 2 reference data | Same aggregate reference data; illustrative result marker |
-| Report | Image assessment report; optional contributing-region maps | Clearly marked demonstration report |
-
-The website opens directly to the workbench and demonstrates image selection and report generation. Its result numbers are **not calculated from uploaded images** and are not assessment results. The demo accepts JPEG, PNG and WebP; TIFF and model settings are available in the local application.
-
-## Run locally
+## Offline use
 
 Use Python 3.12. From this directory:
 
@@ -61,9 +51,9 @@ Include heatmap is off by default. Enabling it in Settings affects the next anal
 
 ### Optional result interpretation
 
-Without an LLM, concise local templates explain the result relative to the 50% classification threshold. You may configure an OpenAI-compatible Chat Completions endpoint, model and API key in Settings. Only the modality, RVL Score and probability are sent to that endpoint; images, patient details and filenames are not sent. Invalid or unavailable responses fall back to the local template. Interpretation does not change the model output.
+Without an LLM, prespecified templates explain the result relative to the 50% classification threshold. You may configure an OpenAI-compatible Chat Completions endpoint, model and API key in Settings. Only the modality, RVL Score and probability are sent to that endpoint; images, patient details and filenames are not sent. Invalid or unavailable responses fall back to the prespecified template. Interpretation does not change the model output.
 
-Settings, including an optional API key, are stored locally at `runtime/settings.json` with owner-only permissions. The entire runtime directory is excluded from Git. Uploaded images, patient details and results stay in memory; the application does not maintain a report history. Saved PDFs are managed by the user.
+Settings, including an optional API key, are stored on your computer at `runtime/settings.json` with owner-only permissions. The entire runtime directory is excluded from Git. Uploaded images, patient details and results stay in memory; the application does not maintain a report history. Saved PDFs are managed by the user.
 
 ## Scientific definitions
 
@@ -77,21 +67,21 @@ This application concerns RVL model outputs in uveitis. Probability is an uncali
 
 ## Report fonts
 
-The local report supports Helvetica Neue LT Std Light, Bold and Bold Condensed when appropriately licensed files are placed in `static/fonts/`. These binaries are not distributed in this repository. Without them, reports remain usable and printable with system sans-serif fonts. See [font setup](static/fonts/README.md). The website demo uses system fonts and includes no proprietary font files.
+The offline report supports Helvetica Neue LT Std Light, Bold and Bold Condensed when appropriately licensed files are placed in `static/fonts/`. These binaries are not distributed in this repository. Without them, reports remain usable and printable with system sans-serif fonts. See [font setup](static/fonts/README.md). The website demo uses system fonts and includes no proprietary font files.
 
 ## Repository layout
 
 ```text
-inference.py / attribution.py    Local model inference and contributing regions
-server.py / interpretation.py    Local API, settings and result interpretation
+inference.py / attribution.py    Offline model inference and contributing regions
+server.py / interpretation.py    API, settings and result interpretation
 reference.py / data/            Aggregate reference distributions
 vendor/                         Extracted model and attribution definitions
-static/                         Local workbench and printable report
-launch.py / start.*              Local startup
+static/                         Offline workbench and printable report
+launch.py / start.*              Offline startup
 scripts/                        Demo build and offline aggregate reference export
 docs/                          Public static website and demonstration
-runtime/                        Local settings and QA output (ignored)
-weights/                        Optional local weights (ignored)
+runtime/                        Settings and QA output (ignored)
+weights/                        Optional model weights (ignored)
 ```
 
 ## Development
@@ -103,7 +93,7 @@ python scripts/build_demo.py
 python -m http.server 8080 --directory docs
 ```
 
-The tests do not require trained checkpoints or private research data. Rebuild the demo after changing the local workbench: the build reuses its layout and report, with a browser-only adapter for illustrative results. GitHub Pages serves only `docs/` from `main`; it never runs Python or exposes the local API. The application service binds only to loopback and is not configured as a multi-user hospital deployment.
+The tests do not require trained checkpoints or private research data. Rebuild the demo after changing the offline workbench: the build reuses its layout and report, with a browser-only adapter for illustrative results. GitHub Pages serves only `docs/` from `main`; it never runs Python or exposes the offline application’s API. The application service binds only to loopback and is not configured as a multi-user hospital deployment.
 
 ## Licensing and acknowledgements
 

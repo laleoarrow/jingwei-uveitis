@@ -37,7 +37,7 @@ html = replace_once(html, '            <div class="image-fileline">', '         
 html = html.replace('<span>This image</span>', '<span>Demo result</span>')
 html = replace_section(html, '      <section id="settingsView"', '      <section id="reportView"', '''      <section id="settingsView" class="view hidden">
         <div class="page-heading"><h1>Settings</h1></div>
-        <section class="settings-card demo-local-settings"><h2>Run locally</h2><p>Configure model weights and generate real predictions in the local application.</p><a class="button button-primary" href="https://github.com/laleoarrow/jingwei-uveitis#readme">Installation &amp; source ↗</a></section>
+        <section class="settings-card demo-local-settings"><h2>Offline use</h2><p>Configure model weights to analyse CFP or OCT images offline.</p><a class="button button-primary" href="https://github.com/laleoarrow/jingwei-uveitis#readme">Installation &amp; source ↗</a></section>
       </section>
 ''')
 
@@ -79,7 +79,7 @@ for line in [
     if "clearLlmKey" in line and line not in app:
         line = line.replace("renderLlmSettings();", "state.clearLlmApiKey = true; renderLlmSettings();")
     app = replace_once(app, line, '')
-app = replace_once(app, "  const isTiff = ['tif', 'tiff'].includes(extension) || file.type?.toLowerCase() === 'image/tiff';", "  const isTiff = false; // TIFF decoding requires the local application.")
+app = replace_once(app, "  const isTiff = ['tif', 'tiff'].includes(extension) || file.type?.toLowerCase() === 'image/tiff';", "  const isTiff = false; // TIFF decoding requires the offline application.")
 app = app.replace('Choose a JPG, PNG, TIFF or WEBP image.', 'Choose a JPG, PNG or WebP image.')
 app = app.replace("'Analyzing image…'", "'Preparing demo…'")
 app = app.replace('Analysis time · ${', 'Demo time · ${')

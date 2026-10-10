@@ -103,7 +103,7 @@ async function refreshHealth() {
   } catch (error) {
     state.health = null;
     renderHealth();
-    setNotice('serviceNotice', 'Local service unavailable. Start JingWei and retry.', true);
+    setNotice('serviceNotice', 'JingWei service unavailable. Start the application and retry.', true);
   }
 }
 

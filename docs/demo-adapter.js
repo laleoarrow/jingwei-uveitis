@@ -39,7 +39,7 @@
     if (bytes[0] === 255 && bytes[1] === 216) type = 'image/jpeg';
     else if (bytes[0] === 137 && String.fromCharCode(...bytes.slice(1, 4)) === 'PNG') type = 'image/png';
     else if (String.fromCharCode(...bytes.slice(0, 4)) === 'RIFF' && String.fromCharCode(...bytes.slice(8, 12)) === 'WEBP') type = 'image/webp';
-    else throw new Error('Choose a JPG, PNG or WebP image. TIFF is available in the local app.');
+    else throw new Error('Choose a JPG, PNG or WebP image. TIFF is available in the offline app.');
     const url = URL.createObjectURL(new Blob([bytes], { type }));
     try {
       const image = new Image();
@@ -56,7 +56,7 @@
     checkAbort(options.signal);
     const route = new URL(path, 'https://demo.invalid');
     if (route.pathname === '/api/settings') {
-      if (options.method && options.method !== 'GET') throw new Error('Configure models in the local application.');
+      if (options.method && options.method !== 'GET') throw new Error('Configure models in the offline application.');
       return { ...settings };
     }
     if (route.pathname === '/api/health') return { status: 'demo', device: 'browser', available_devices: [], reference_available: true, models: { cfp: { exists: false, loaded: false, name: 'No model loaded' }, oct: { exists: false, loaded: false, name: 'No model loaded' } } };
@@ -82,7 +82,7 @@
         model: { name: 'Fixed illustrative example', checkpoint: '', signature: 'demo', device: 'browser', reference_compatible: true },
       };
     }
-    throw new Error('This feature is available in the local application.');
+    throw new Error('This feature is available in the offline application.');
   };
 
   window.jingweiDemoSample = async () => {
