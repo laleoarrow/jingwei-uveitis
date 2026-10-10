@@ -1,0 +1,109 @@
+# JingWei · 精卫
+
+A local image-assessment workbench for retinal vascular leakage (RVL) in uveitis. Select a CFP or OCT image, view the model output against reference distributions, and generate a printable clinical assessment report.
+
+**[Website & interactive demo](https://laleoarrow.github.io/jingwei-uveitis/) · [Source](https://github.com/laleoarrow/jingwei-uveitis)**
+
+## Two ways to explore
+
+| | Local application | Website demo |
+|---|---|---|
+| Model inference | Real, with separately supplied compatible weights | None |
+| Results | RVL Score and predicted probability from the image | Fixed illustrative example |
+| Images | Processed by your local Python service | Stay in the browser |
+| Reference distribution | Bundled aggregate Figure 2 reference data | Synthetic illustration |
+| Report | Image assessment report; optional contributing-region maps | Clearly marked demonstration report |
+
+The website demonstrates the workflow. Its numbers are **not calculated from uploaded images** and are not assessment results.
+
+## Run locally
+
+Use Python 3.12. From this directory:
+
+```sh
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+python launch.py
+```
+
+Open **http://127.0.0.1:8765/**. Keep the process running while using the application. After installation, macOS users can double-click `start.command`; Windows users can use `start.bat`.
+
+Windows PowerShell:
+
+```powershell
+py -3.12 -m venv .venv
+.venv\Scripts\python.exe -m pip install -r requirements.txt
+.venv\Scripts\python.exe launch.py
+```
+
+For another port, use `python launch.py --port 8766`. `--no-browser` starts the service without opening a tab. Windows launch support is provided but has not been tested on a Windows machine.
+
+### Model weights
+
+Weights are **not included** or downloaded automatically. Supply the corresponding fine-tuned binary RVL checkpoints, then set their paths in Settings:
+
+- **CFP:** RETFound DINOv2 / ViT-L/14. Default location: `weights/CFP.pth`.
+- **OCT:** RETFound MAE / ViT-L/16. Default location: `weights/OCT.pth`.
+
+You can select files elsewhere using absolute paths. A generic pretrained RETFound checkpoint does not replace these fine-tuned classification weights. Settings checks the path and device; actual model compatibility is checked during loading. CPU and Apple MPS are supported. Automatic uses MPS when available, otherwise CPU.
+
+The app is independent of the original research repository. Model definitions, attribution code, and aggregate reference curves are included. A custom checkpoint can produce an assessment, but the historical reference distribution is shown only when its contents match the frozen study checkpoint signature.
+
+## Workflow
+
+1. Select CFP or OCT, then drop one image. JPEG, PNG, single-page TIFF and WebP are supported (up to 20 MiB / 40 million pixels).
+2. Enter optional examination details. Assessment shows RVL Score, predicted probability, classification and elapsed analysis time.
+3. Select a reference cohort and generate the report.
+4. Print or save as PDF, preferably A4 at 100% scale. Modern Chromium browsers support the report's Printed timestamp and Page X of Y footer. Turn off the browser's additional header/footer to avoid duplication.
+
+Include heatmap is off by default. Enabling it in Settings affects the next analysis and adds the Original / Heatmap / Overlay row under **Contributing regions**. Without a heatmap, the original image is positioned beside the assessment results. All contributing-region views use the same model-input crop.
+
+### Optional result interpretation
+
+Without an LLM, concise local templates explain the result relative to the 50% classification threshold. You may configure an OpenAI-compatible Chat Completions endpoint, model and API key in Settings. Only the modality, RVL Score and probability are sent to that endpoint; images, patient details and filenames are not sent. Invalid or unavailable responses fall back to the local template. Interpretation does not change the model output.
+
+Settings, including an optional API key, are stored locally at `runtime/settings.json` with owner-only permissions. The entire runtime directory is excluded from Git. Uploaded images, patient details and results stay in memory; the application does not maintain a report history. Saved PDFs are managed by the user.
+
+## Scientific definitions
+
+- Input: RGB, bicubic resize to a 256-pixel short edge, 224 × 224 center crop, ImageNet normalization. The original evaluation orientation behavior is retained.
+- **RVL Score = logit₁ − logit₀**; **probability = sigmoid(RVL Score)**. The classification boundary is score 0 / probability 50%.
+- Model evaluation uses float32. The OCT head readout follows the original evaluated implementation. Device differences can introduce small floating-point differences.
+- Attribution targets the same logit margin for both classes: CFP uses gradient-weighted attention rollout; OCT uses final-block patch activation × gradient. Only positive contributions are displayed, normalized within each image. Colors do not represent lesion severity or segmented leakage boundaries.
+- The bundled reference file contains aggregate counts, quantiles, score ranges and KDE curves for each cohort and modality, without individual image/patient records. Scott-bandwidth KDE is limited to each group's observed score range. See [reference provenance](data/README.md).
+
+This application concerns RVL model outputs in uveitis. Probability is an uncalibrated model output, not disease severity. The report provides a clinician review area and does not replace a complete FFA assessment.
+
+## Report fonts
+
+The local report supports Helvetica Neue LT Std Light, Bold and Bold Condensed when appropriately licensed files are placed in `static/fonts/`. These binaries are not distributed in this repository. Without them, reports remain usable and printable with system sans-serif fonts. See [font setup](static/fonts/README.md). The website demo uses system fonts and includes no proprietary font files.
+
+## Repository layout
+
+```text
+inference.py / attribution.py    Local model inference and contributing regions
+server.py / interpretation.py    Local API, settings and result interpretation
+reference.py / data/            Aggregate reference distributions
+vendor/                         Extracted model and attribution definitions
+static/                         Local workbench and printable report
+launch.py / start.*              Local startup
+scripts/                        Offline aggregate reference export
+docs/                          Public static website and demonstration
+runtime/                        Local settings and QA output (ignored)
+weights/                        Optional local weights (ignored)
+```
+
+## Development
+
+```sh
+python -m unittest discover -s . -p 'test_*.py'
+node --check static/app.js
+python -m http.server 8080 --directory docs
+```
+
+The tests do not require trained checkpoints or private research data. GitHub Pages serves only `docs/` from `main`; it never runs Python or exposes the local API. The application service binds only to loopback and is not configured as a multi-user hospital deployment.
+
+## Licensing and acknowledgements
+
+This is a source-available release. No separate reuse license has yet been granted for original JingWei application code. The vendored RETFound code is subject to its upstream **CC BY-NC 4.0** license and attribution requirements; model weights have their own terms. See [third-party notices](THIRD_PARTY_NOTICES.md) and [vendor provenance](vendor/NOTICE.md). This project is not affiliated with Mayo Clinic.

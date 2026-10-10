@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#ffffff">
+  <link rel="icon" href="data:,">
+  <title>JingWei System</title>
+  <script>
+    if (window.location.protocol === 'file:') window.location.replace('http://127.0.0.1:8765/');
+  </script>
+  <link rel="stylesheet" href="/styles.css?v=20261010-standalone">
+  <style id="reportPrintMetadata"></style>
+  <script src="/app.js?v=20261010-standalone" defer></script>
+</head>
+<body>
+  <header class="app-header">
+    <a class="brand" href="#workspace" aria-label="JingWei home"><img class="brand-wordmark" src="/jingwei-wordmark.svg?v=20261010" alt="JingWei"> <small class="brand-companion">精卫</small></a>
+    <nav aria-label="Main navigation">
+      <button class="nav-item active" data-view="workspace" type="button">Analysis</button>
+      <button class="nav-item" data-view="settings" type="button">Settings</button>
+    </nav>
+    <div class="header-tools">
+      <span class="connection"><span class="status-dot" id="connectionDot"></span><span id="connectionText">Connected</span></span>
+    </div>
+  </header>
+  <div class="app-shell">
+    <main>
+      <section id="workspaceView" class="view">
+        <div class="page-heading">
+          <h1>RVL assessment</h1>
+          <button class="button button-secondary" id="newCase" type="button">New examination</button>
+        </div>
+        <div class="notice hidden" id="serviceNotice" role="status"></div>
+        <div class="analysis-grid">
+          <section class="image-card" aria-labelledby="imageTitle">
+            <div class="section-heading image-heading">
+              <h2 id="imageTitle">Image</h2>
+              <div class="segmented" role="group" aria-label="Image modality">
+                <button type="button" class="selected" data-modality="cfp" aria-pressed="true">CFP</button>
+                <button type="button" data-modality="oct" aria-pressed="false">OCT</button>
+              </div>
+            </div>
+            <input type="file" id="imageInput" accept=".jpg,.jpeg,.png,.tif,.tiff,.webp,image/jpeg,image/png,image/tiff,image/webp" class="visually-hidden">
+            <button type="button" id="dropZone" class="drop-zone" aria-label="Choose or drop an image">
+              <span class="drop-content" id="dropContent">
+                <strong>Drop an image here</strong>
+                <span class="upload-link">Browse files</span>
+                
+              </span>
+              <img id="imagePreview" alt="Uploaded image" class="hidden">
+              <span class="replace-image hidden" id="replaceImage">Replace image</span>
+            </button>
+            <div class="image-fileline"><span id="imageFilename"></span><span id="imageDimensions"></span></div>
+            <div class="image-footnote"><span class="status-dot neutral" id="modelDot"></span><span id="activeModelStatus"></span></div>
+          </section>
+          <section class="result-card" aria-labelledby="resultTitle">
+            <div class="section-heading"><h2 id="resultTitle">Assessment</h2><span class="result-status hidden" id="resultStatus"></span></div>
+            <div id="predictionError" class="notice error-notice hidden" role="alert"></div>
+            <div id="predictionWaiting" class="prediction-waiting hidden" role="status"><strong id="predictionPhase"></strong><span id="predictionElapsed" role="timer" aria-live="off"></span></div>
+            <div id="assessmentValues">
+              <div class="metrics">
+                <div class="metric"><span class="metric-label">RVL Score</span><div class="metric-value" id="scoreValue">—</div></div>
+                <div class="metric probability-metric"><span class="metric-label">Predicted probability</span><div class="metric-value" id="probabilityValue">—<span class="metric-unit">%</span></div></div>
+              </div>
+              <div class="probability-scale"><div class="probability-track"><span id="probabilityBar"></span><i></i></div><div class="probability-labels"><span>0%</span><span>50%</span><span>100%</span></div></div>
+              <div class="interpretation" id="interpretation"><strong id="interpretationTitle"></strong></div>
+            </div>
+            <div class="result-footer"><button class="button button-primary" id="openReport" type="button" disabled>Generate report</button></div>
+          </section>
+        </div>
+        <details class="patient-card" id="patientDetails" open>
+          <summary><span id="patientTitle">Examination details</span><span class="optional">Optional</span><span class="details-chevron" aria-hidden="true"></span></summary>
+          <div class="patient-body">
+            <div class="patient-fields">
+              <label><span>Patient ID</span><input id="patientId" type="text" maxlength="80" autocomplete="off"></label>
+              <label><span>Patient name</span><input id="patientName" type="text" maxlength="80" autocomplete="off"></label>
+              <label><span>Eye</span><select id="eye"><option value="">Select</option><option value="OD">Right (OD)</option><option value="OS">Left (OS)</option></select></label>
+              <label><span>Examination date</span><input id="examDate" type="date"></label>
+              <label><span>Referring clinician</span><input id="physician" type="text" maxlength="80" autocomplete="off"></label>
+            </div>
+            <button class="text-button hidden" id="applyPatient" type="button">Update report details</button>
+          </div>
+        </details>
+        <section class="distribution-card" aria-labelledby="distributionTitle">
+          <div class="section-heading distribution-heading"><h2 id="distributionTitle">Reference distribution</h2><label class="cohort-select"><span class="visually-hidden">Reference cohort</span><select id="cohort">
+            <option value="internal_test">UC-FAH-CQMU</option>
+            <option value="prospective">UC-FAH-CQMU · Temporal validation</option>
+            <option value="shanghai">EENT-FDU</option><option value="zhengzhou">FAH-ZZU</option><option value="jilin">OC-JLU2H</option><option value="proton">PROTON</option>
+          </select></label></div>
+          <div class="chart-legend"><span><i class="legend-dot positive"></i><span>RVL positive</span></span><span><i class="legend-dot negative"></i><span>RVL negative</span></span><span id="individualLegend" class="hidden"><i class="legend-individual"></i><span>This image</span></span></div>
+          <div id="distributionChart" class="distribution-chart" aria-live="polite"><div class="chart-empty">Loading reference…</div></div>
+        </section>
+      </section>
+      <section id="settingsView" class="view hidden">
+        <div class="page-heading"><h1>Settings</h1></div>
+        <form id="settingsForm" class="settings-layout">
+          <section class="settings-card">
+            <h2>Model weights</h2>
+            <div class="weight-setting"><div class="weight-heading"><h3>CFP</h3><p id="cfpModelName">RETFound · DINOv2</p><span class="weight-state" id="cfpWeightState"></span></div><label><span class="visually-hidden">CFP checkpoint path</span><input id="cfpWeightPath" type="text" required spellcheck="false" autocomplete="off"></label></div>
+            <div class="weight-setting"><div class="weight-heading"><h3>OCT</h3><p id="octModelName">RETFound · MAE</p><span class="weight-state" id="octWeightState"></span></div><label><span class="visually-hidden">OCT checkpoint path</span><input id="octWeightPath" type="text" required spellcheck="false" autocomplete="off"></label></div>
+            <label class="device-setting"><span>Processing device</span><select id="device"><option value="auto">Automatic</option><option value="cpu">CPU</option><option value="mps" disabled>Apple MPS</option></select></label>
+            <p class="device-status" id="deviceStatus" role="status">Checking device availability…</p>
+          </section>
+          <section class="settings-card">
+            <h2>Report</h2>
+            <label><span>Institution / department</span><input id="institution" type="text" maxlength="120" autocomplete="organization"></label>
+            <label class="llm-toggle heatmap-toggle"><input id="includeHeatmap" type="checkbox" aria-describedby="heatmapHint"><span>Include heatmap</span></label>
+            <p id="heatmapHint" class="settings-note">Heatmap generation takes longer.</p>
+          </section>
+          <section class="settings-card interpretation-settings">
+            <div class="section-heading"><h2>Report interpretation</h2><label class="llm-toggle"><input id="llmEnabled" type="checkbox"><span>Use LLM</span></label></div>
+            <div id="llmFields" class="llm-fields hidden">
+              <label><span>API URL</span><input id="llmBaseUrl" type="url" placeholder="https://api.example.com/v1" autocomplete="off" spellcheck="false"></label>
+              <label><span>Model</span><input id="llmModel" type="text" maxlength="200" autocomplete="off" spellcheck="false"></label>
+              <label><span>API key</span><span class="llm-key-row"><input id="llmApiKey" type="password" autocomplete="new-password" spellcheck="false"><button id="clearLlmKey" class="button button-secondary" type="button">Remove key</button></span></label>
+              <p class="settings-note">Only prediction results are sent.</p>
+            </div>
+          </section>
+          <div id="settingsMessage" class="notice hidden" role="status"></div>
+          <div class="settings-actions"><button id="saveSettings" type="submit" class="button button-primary">Save changes</button></div>
+        </form>
+      </section>
+      <section id="reportView" class="view hidden"><div class="report-toolbar"><button id="backWorkspace" class="button button-secondary" type="button">Back to analysis</button><button id="printReport" class="button button-primary" type="button">Print / Save PDF</button></div><div id="reportPage" class="report-page"></div></section>
+    </main>
+  </div>
+</body>
+</html>
