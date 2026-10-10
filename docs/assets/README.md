@@ -1,6 +1,6 @@
 # Generated demonstration images
 
-These fictional CFP and OCT images were created with the built-in image_gen tool on 11 October 2026. They are illustrative interface assets, not patient records or validated clinical acquisitions. Demo scores remain fixed and are not derived from these images.
+These fictional CFP and OCT images were created with the built-in image_gen tool on 11 October 2026. They are illustrative interface assets, not patient records or validated clinical acquisitions. The offline app runs model inference on these images; these outputs demonstrate the workflow and do not validate the generated anatomy. GitHub Pages uses fixed illustrative scores.
 
 - `sample-cfp-generated.png`: synthetic colour fundus photograph.
 - `sample-oct-generated.png`: synthetic macular OCT B-scan.
