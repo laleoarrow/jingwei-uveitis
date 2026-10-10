@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.py[cod]
+.DS_Store
+.env
+.env.*
+runtime/
+weights/
+*.pth
+*.pt
+static/fonts/*.woff2
+static/fonts/*.woff
+static/fonts/*.ttf
+static/fonts/*.otf
+
