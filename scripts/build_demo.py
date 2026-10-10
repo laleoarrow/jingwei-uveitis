@@ -8,7 +8,7 @@ import shutil
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "static"
 DOCS = ROOT / "docs"
-VERSION = "workbench-demo-3"
+VERSION = "workbench-demo-4"
 
 
 def replace_once(text, old, new):
@@ -92,13 +92,15 @@ app = app.replace('<span>Analyzed: ', '<span>Demo created: ')
 app = app.replace(' of the analyzed field', ' preview; not analyzed')
 app = app.replace('This image</span>', 'Demo result</span>')
 app = app.replace('FFA reference · ${e(referenceTitle)}', 'FFA reference · ${e(referenceTitle)} · illustrative marker')
+app = replace_once(app, 'filename: file.name, modality };', 'filename: file.name, modality, aiGeneratedSample: file.jingweiGeneratedSample === true };')
+app = app.replace("imagePanel('Original', reportImage", "imagePanel(snapshot.aiGeneratedSample ? 'AI-generated sample' : 'Original', reportImage")
 app = replace_section(app, '    // Licensed local faces are optional', '    if (state.result !== result', '    await document.fonts.ready;\n')
 app = replace_once(app, "  $('newCase').addEventListener('click', newCase);", """  $('newCase').addEventListener('click', newCase);
   $('useDemoSample').addEventListener('click', async () => {
     const sequence = state.predictionSequence;
     $('useDemoSample').disabled = true;
     try {
-      const file = await window.jingweiDemoSample();
+      const file = await window.jingweiDemoSample(state.modality);
       if (sequence === state.predictionSequence) analyzeFile(file);
     } catch {
       if (sequence === state.predictionSequence) setNotice('predictionError', 'The sample could not load. Choose a JPG, PNG or WebP image.', true);
