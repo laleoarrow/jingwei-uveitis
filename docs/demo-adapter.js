@@ -85,12 +85,15 @@
     throw new Error('This feature is available in the offline application.');
   };
 
-  window.jingweiDemoSample = async () => {
+  window.jingweiDemoSample = async (modality) => {
+    if (!['cfp', 'oct'].includes(modality)) throw new Error('Select CFP or OCT.');
     const image = new Image();
-    image.src = 'assets/sample.svg';
+    image.src = `assets/sample-${modality}-generated.png`;
     await image.decode();
     const blob = await new Promise((resolve) => canvasImage(image).toBlob(resolve, 'image/png'));
     if (!blob) throw new Error('Could not load the sample.');
-    return new File([blob], 'abstract-sample.png', { type: 'image/png' });
+    const file = new File([blob], `AI-generated-${modality.toUpperCase()}-sample.png`, { type: 'image/png' });
+    file.jingweiGeneratedSample = true;
+    return file;
   };
 })();
