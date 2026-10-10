@@ -14,7 +14,7 @@ const state = {
   predictionSequence: 0, referenceSequence: 0, predictionController: null,
   predictionTimer: null, predictionStartedAt: null,
   previewUrl: null, originalPreview: null, previewMode: 'original', view: 'workspace',
-  settingsRevision: 0, clearLlmApiKey: false,
+  settingsRevision: 0, settingsPending: false, clearLlmApiKey: false,
   interpretationSequence: 0, interpretationController: null, interpretationPending: false,
   interpretationResult: null, reportPrintPrepared: false,
 };
@@ -88,7 +88,7 @@ async function ensureInterpretation() {
   cancelInterpretation();
   if (result.interpretation) return;
   // Settings changes apply to new analyses. Never regenerate an old result with a new LLM configuration.
-  if (result.interpretationSettingsRevision !== state.settingsRevision) {
+  if (state.settingsPending || result.interpretationSettingsRevision !== state.settingsRevision) {
     result.interpretation = presetInterpretation(result);
     if (state.view === 'report') renderReport();
     return;
@@ -210,6 +210,29 @@ function showPreview(mode) {
   });
   $('previewNote').textContent = mode === 'input' ? '224 × 224 · Center crop' : '';
   $('previewNote').classList.toggle('hidden', mode !== 'input');
+}
+
+async function useSample() {
+  const sequence = state.predictionSequence;
+  const modality = state.modality;
+  const button = $('useSample');
+  button.disabled = true;
+  try {
+    const image = new Image();
+    image.src = `assets/sample-${modality}-generated.png`;
+    await image.decode();
+    const canvas = document.createElement('canvas');
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+    canvas.getContext('2d').drawImage(image, 0, 0);
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+    if (!blob) throw new Error('Could not load the sample.');
+    const file = new File([blob], `AI-generated-${modality.toUpperCase()}-sample.png`, { type: 'image/png' });
+    file.jingweiGeneratedSample = true;
+    if (sequence === state.predictionSequence) analyzeFile(file);
+  } catch {
+    if (sequence === state.predictionSequence) setNotice('predictionError', 'The sample could not load. Choose an image or try again.', true);
+  } finally { button.disabled = false; }
 }
 
 async function analyzeFile(file) {
@@ -478,7 +501,7 @@ function renderReport() {
     ${includeAttribution ? `<h2 class="report-section-title">Contributing regions</h2><div class="report-images">${imagePanel(snapshot.aiGeneratedSample ? 'AI-generated sample' : 'Original', reportImage, 'Analyzed image unavailable')}${imagePanel('Heatmap', pngImage(attribution?.heatmap), 'Heatmap unavailable')}${imagePanel('Overlay', pngImage(attribution?.overlay), 'Overlay unavailable')}</div>${imageLegend}` : ''}
     <h2 class="report-section-title">Reference distribution</h2>
     <div class="report-distribution"><div class="report-chart-legend ${compatible ? '' : 'hidden'}"><span><i class="legend-dot positive"></i>RVL positive</span><span><i class="legend-dot negative"></i>RVL negative</span><span><i class="legend-individual"></i>Demo result</span></div>${chart}${compatible ? `<div class="report-reference-note">FFA reference · ${e(referenceTitle)} · illustrative marker</div>` : ''}</div>
-    <section class="report-interpretation"><h2 class="report-section-title">Interpretation${interpretationStatus ? `<span class="report-interpretation-status">${e(interpretationStatus)}</span>` : ''}</h2><p class="report-interpretation-text">${e(interpretation.text)}</p></section>
+    <section class="report-interpretation"><h2 class="report-section-title">Interpretation${interpretationStatus ? `<span class="report-interpretation-status${interpretationPending ? ' report-interpretation-pending' : ''}">${e(interpretationStatus)}</span>` : ''}</h2><p class="report-interpretation-text">${e(interpretation.text)}</p></section>
     <div class="report-signature"><span>Reviewed by <i class="signature-line"></i></span><span>Review date <i class="signature-line"></i></span></div>
     <footer class="report-footer"><time datetime="${printedAt.toISOString()}">${e(printedLabel)}</time><span class="report-preview-page">Page 1 of 1</span></footer>`;
 }
@@ -511,16 +534,7 @@ async function initialize() {
   document.querySelector('.brand').addEventListener('click', (event) => { event.preventDefault(); setView('workspace'); });
   document.querySelectorAll('[data-modality]').forEach((button) => button.addEventListener('click', () => changeModality(button.dataset.modality)));
   $('newCase').addEventListener('click', newCase);
-  $('useDemoSample').addEventListener('click', async () => {
-    const sequence = state.predictionSequence;
-    $('useDemoSample').disabled = true;
-    try {
-      const file = await window.jingweiDemoSample(state.modality);
-      if (sequence === state.predictionSequence) analyzeFile(file);
-    } catch {
-      if (sequence === state.predictionSequence) setNotice('predictionError', 'The sample could not load. Choose a JPG, PNG or WebP image.', true);
-    } finally { $('useDemoSample').disabled = false; }
-  });
+  $('useSample').addEventListener('click', useSample);
   $('cohort').addEventListener('change', loadReference);
   $('dropZone').addEventListener('click', () => $('imageInput').click());
   $('imageInput').addEventListener('change', (event) => analyzeFile(event.target.files[0]));

@@ -26,6 +26,8 @@ jobs:
         run: |
           node --check static/app.js
           find docs -name '*.js' -exec node --check {} \;
+      - name: Test frontend interpretation lifecycle
+        run: node --test test_frontend.cjs
       - name: Check generated demo
         run: |
           python scripts/build_demo.py

@@ -10,9 +10,9 @@
   <script>
     if (window.location.protocol === 'file:') window.location.replace('http://127.0.0.1:8765/');
   </script>
-  <link rel="stylesheet" href="/styles.css?v=20261010-offline-wording">
+  <link rel="stylesheet" href="/styles.css?v=20261011-samples">
   <style id="reportPrintMetadata"></style>
-  <script src="/app.js?v=20261010-offline-wording" defer></script>
+  <script src="/app.js?v=20261011-samples" defer></script>
 </head>
 <body>
   <header class="app-header">
@@ -52,6 +52,7 @@
               <img id="imagePreview" alt="Uploaded image" class="hidden">
               <span class="replace-image hidden" id="replaceImage">Replace image</span>
             </button>
+            <div class="sample-action"><button class="text-button" id="useSample" type="button">Use sample</button></div>
             <div class="image-fileline"><span id="imageFilename"></span><span id="imageDimensions"></span></div>
             <div class="image-footnote"><span class="status-dot neutral" id="modelDot"></span><span id="activeModelStatus"></span></div>
           </section>

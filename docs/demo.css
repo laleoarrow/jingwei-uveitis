@@ -4,8 +4,6 @@
 .demo-notice-copy strong { display: block; font-size: 16px; font-weight: 600; }
 .demo-notice-copy > span { display: block; margin-top: 2px; color: #365b4e; font-size: 14px; }
 @media (max-width: 600px) { .demo-notice { align-items: flex-start; flex-direction: column; gap: 9px; padding: 14px 16px; } }
-.demo-sample-action { display: flex; justify-content: flex-end; margin-top: 9px; }
-.demo-sample-action .text-button { font-size: 13px; }
 .demo-local-settings { max-width: 620px; }
 .demo-local-settings p { color: #626b78; font-size: 15px; line-height: 1.65; margin: 18px 0 24px; }
 .demo-local-settings a { text-decoration: none; }
