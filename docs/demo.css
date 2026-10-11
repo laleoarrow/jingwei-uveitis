@@ -12,10 +12,13 @@
 .demo-notice-copy strong { display: block; font-size: 16px; font-weight: 600; }
 .demo-notice-copy > span { display: block; margin-top: 2px; color: #365b4e; font-size: 14px; }
 .demo-notice-copy { flex: 1; min-width: 0; }
-.demo-download { display: flex; flex-direction: column; align-items: center; gap: 6px; margin-left: auto; flex-shrink: 0; }
+.demo-download { margin-left: auto; max-width: 390px; }
 .demo-setup-link { font-size: 13px; color: #245448; text-decoration: underline; text-underline-offset: 3px; }
-.demo-download-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
-@media (max-width: 860px) { .demo-notice { flex-wrap: wrap; } .demo-download { width: 100%; flex-direction: row; flex-wrap: wrap; gap: 16px; } }
+.demo-download-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; }
+.demo-install-options { min-width: 0; }
+.demo-install-options .demo-install-feedback { margin: 10px 0 0; font-size: 13px; line-height: 1.5; color: #365b4e; }
+.demo-install-feedback a { color: #245448; text-decoration: underline; text-underline-offset: 3px; }
+@media (max-width: 1000px) { .demo-notice { flex-wrap: wrap; } .demo-download { width: 100%; max-width: none; } }
 @media (max-width: 600px) { .demo-notice { align-items: flex-start; flex-direction: column; gap: 9px; padding: 14px 16px; } }
 .demo-local-settings { max-width: 620px; }
 .demo-local-settings p { color: #626b78; font-size: 15px; line-height: 1.65; margin: 18px 0 24px; }

@@ -26,9 +26,11 @@ The launcher installs Python 3.12 and the required packages in the application f
 
 ### 3. Configure the weights
 
-**Model weights are supplied separately. Access details will be announced later.** You can open the interface without weights, but image analysis requires them.
+**[Download JingWei model weights](https://pan.baidu.com/s/1r7gfecgxxbtCQnV0FmZlSg?pwd=7a7c)** (Baidu Netdisk) · Access code: `7a7c`.
 
-Once you receive the files, open **Settings**, enter the file path for **CFP**, **OCT**, or both, and select **Save changes**. Keep the original filenames; you can paste an absolute path, including one copied with quotation marks. Leave an unused modality blank.
+You can open the interface without weights, but image analysis requires them.
+
+After downloading the weights, open **Settings**, enter the file path for **CFP**, **OCT**, or both, and select **Save changes**. Keep the original filenames; you can paste an absolute path, including one copied with quotation marks. Leave an unused modality blank.
 
 Alternatively, these default locations are recognised automatically:
 

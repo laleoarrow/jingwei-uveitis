@@ -584,6 +584,34 @@ async function initialize() {
   ]);
 }
 
+const jingweiInstallPrompt = "Install and launch JingWei from https://github.com/laleoarrow/jingwei-uveitis on this computer.\nFollow the README and use the launcher for my operating system. Verify that the offline web app opens.\nAsk me for the paths to my CFP and/or OCT weight files and configure them without renaming the files.\nIf I do not have weights yet, complete installation and explain how to add them later.";
+
+document.querySelectorAll('[data-copy-install]').forEach((button) => {
+  const feedback = button.closest('.demo-install-options').querySelector('.demo-install-feedback');
+  const message = feedback.querySelector('span');
+  const manualCopy = feedback.querySelector('a');
+  let resetTimer;
+  button.addEventListener('click', async () => {
+    clearTimeout(resetTimer);
+    button.disabled = true;
+    button.textContent = 'Install with LLM';
+    feedback.hidden = true;
+    manualCopy.hidden = true;
+    try {
+      await navigator.clipboard.writeText(jingweiInstallPrompt);
+      button.textContent = 'Copied';
+      message.textContent = 'Paste into Codex, Claude, Gemini, or WorkBuddy.';
+      resetTimer = setTimeout(() => { button.textContent = 'Install with LLM'; }, 3000);
+    } catch {
+      message.textContent = 'Could not copy automatically.';
+      manualCopy.hidden = false;
+    } finally {
+      button.disabled = false;
+      feedback.hidden = false;
+    }
+  });
+});
+
 const demoEntryDialog = document.getElementById('demoEntryDialog');
 document.getElementById('continueDemo').addEventListener('click', () => demoEntryDialog.close());
 demoEntryDialog.showModal();

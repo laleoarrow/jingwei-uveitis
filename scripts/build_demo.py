@@ -8,9 +8,27 @@ import shutil
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "static"
 DOCS = ROOT / "docs"
-VERSION = "workbench-demo-7"
+VERSION = "workbench-demo-8"
 DOWNLOAD_URL = "https://github.com/laleoarrow/jingwei-uveitis/archive/refs/heads/main.zip"
 INSTALL_URL = "https://github.com/laleoarrow/jingwei-uveitis#installation"
+LLM_INSTALL_URL = "https://github.com/laleoarrow/jingwei-uveitis#install-with-llm"
+
+readme = (ROOT / "README.md").read_text(encoding="utf-8")
+install_section = re.search(r'^### Install with LLM\n(.*?)(?=^##? |\Z)', readme, re.M | re.S)
+install_prompt = re.search(r'^```text\n(.*?)\n```', install_section.group(1), re.M | re.S) if install_section else None
+if not install_prompt:
+    raise ValueError("README must contain an Install with LLM text prompt.")
+
+
+def download_actions():
+    return f'''<div class="demo-install-options">
+      <div class="demo-download-actions">
+        <a class="button button-primary" href="{DOWNLOAD_URL}">Download offline app <span aria-hidden="true">↓</span></a>
+        <button class="button button-secondary" type="button" data-copy-install title="Copy installation instructions for Codex, Claude, Gemini, or WorkBuddy">Install with LLM</button>
+        <a class="demo-setup-link" href="{INSTALL_URL}" target="_blank" rel="noopener">Installation guide ↗</a>
+      </div>
+      <p class="demo-install-feedback" role="status" aria-live="polite" hidden><span></span> <a href="{LLM_INSTALL_URL}" target="_blank" rel="noopener" hidden>Copy from README ↗</a></p>
+    </div>'''
 
 
 def replace_once(text, old, new):
@@ -42,7 +60,7 @@ html = replace_once(html, '<body>\n', f'''<body>
       <p class="demo-entry-warning"><strong>No image analysis is performed.</strong> All results are illustrative and are not calculated from your image.</p>
       <p>For actual analysis, download the offline app, follow the installation guide, and configure your model weights in Settings before selecting an image.</p>
     </div>
-    <div class="demo-download-actions"><a class="button button-primary" href="{DOWNLOAD_URL}">Download offline app <span aria-hidden="true">↓</span></a><a class="demo-setup-link" href="{INSTALL_URL}" target="_blank" rel="noopener">Installation guide ↗</a></div>
+    {download_actions()}
     <button class="button button-secondary demo-entry-continue" id="continueDemo" type="button" autofocus>Continue to demo</button>
   </dialog>
 ''')
@@ -50,14 +68,14 @@ html = replace_once(html, '    <main>\n', f'''    <main>
       <aside class="demo-notice" aria-label="Demo notice">
         <span class="demo-notice-badge">Demo only</span>
         <div class="demo-notice-copy"><strong>No image analysis is performed.</strong><span>Results are fixed examples, not predictions from your image.</span></div>
-        <div class="demo-download"><a class="button button-primary" href="{DOWNLOAD_URL}">Download offline app <span aria-hidden="true">↓</span></a><a class="demo-setup-link" href="{INSTALL_URL}" target="_blank" rel="noopener">Installation guide ↗</a></div>
+        <div class="demo-download">{download_actions()}</div>
       </aside>
 ''')
 html = replace_once(html, 'accept=".jpg,.jpeg,.png,.tif,.tiff,.webp,image/jpeg,image/png,image/tiff,image/webp"', 'accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"')
 html = html.replace('<span>This image</span>', '<span>Demo result</span>')
 html = replace_section(html, '      <section id="settingsView"', '      <section id="reportView"', f'''      <section id="settingsView" class="view hidden">
         <div class="page-heading"><h1>Settings</h1></div>
-        <section class="settings-card demo-local-settings"><h2>Offline use</h2><p>Download and unzip the app, then double-click <strong>start.command</strong> on macOS or <strong>start.bat</strong> on Windows. The launcher installs the environment and opens JingWei. Model weights are supplied separately.</p><div class="demo-download-actions"><a class="button button-primary" href="{DOWNLOAD_URL}">Download offline app <span aria-hidden="true">↓</span></a><a class="demo-setup-link" href="{INSTALL_URL}" target="_blank" rel="noopener">Installation guide ↗</a></div></section>
+        <section class="settings-card demo-local-settings"><h2>Offline use</h2><p>Download and unzip the app, then double-click <strong>start.command</strong> on macOS or <strong>start.bat</strong> on Windows. The launcher installs the environment and opens JingWei. Model weights are supplied separately.</p>{download_actions()}</section>
       </section>
 ''')
 
@@ -113,7 +131,33 @@ app = app.replace(' of the analyzed field', ' preview; not analyzed')
 app = app.replace('This image</span>', 'Demo result</span>')
 app = app.replace('FFA reference · ${e(referenceTitle)}', 'FFA reference · ${e(referenceTitle)} · illustrative marker')
 app = replace_section(app, '    // Licensed local faces are optional', '    if (state.result !== result', '    await document.fonts.ready;\n')
-app = replace_once(app, '\ninitialize();', '''
+app = replace_once(app, '\ninitialize();', '\nconst jingweiInstallPrompt = ' + json.dumps(install_prompt.group(1), ensure_ascii=True) + ';\n' + '''
+document.querySelectorAll('[data-copy-install]').forEach((button) => {
+  const feedback = button.closest('.demo-install-options').querySelector('.demo-install-feedback');
+  const message = feedback.querySelector('span');
+  const manualCopy = feedback.querySelector('a');
+  let resetTimer;
+  button.addEventListener('click', async () => {
+    clearTimeout(resetTimer);
+    button.disabled = true;
+    button.textContent = 'Install with LLM';
+    feedback.hidden = true;
+    manualCopy.hidden = true;
+    try {
+      await navigator.clipboard.writeText(jingweiInstallPrompt);
+      button.textContent = 'Copied';
+      message.textContent = 'Paste into Codex, Claude, Gemini, or WorkBuddy.';
+      resetTimer = setTimeout(() => { button.textContent = 'Install with LLM'; }, 3000);
+    } catch {
+      message.textContent = 'Could not copy automatically.';
+      manualCopy.hidden = false;
+    } finally {
+      button.disabled = false;
+      feedback.hidden = false;
+    }
+  });
+});
+
 const demoEntryDialog = document.getElementById('demoEntryDialog');
 document.getElementById('continueDemo').addEventListener('click', () => demoEntryDialog.close());
 demoEntryDialog.showModal();
