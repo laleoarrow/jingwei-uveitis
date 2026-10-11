@@ -20,14 +20,14 @@ try:
     from . import interpretation, reference
     from .inference import (DEFAULT_PATHS, MAX_IMAGE_BYTES, MODEL_NAMES, ROOT,
                             InferenceEngine, InferenceError, available_devices, decode_image,
-                            png_preview, resolve_device,
+                            normalize_checkpoint_path, png_preview, resolve_device,
                             validate_checkpoint_path)
 except ImportError:
     import interpretation
     import reference
     from inference import (DEFAULT_PATHS, MAX_IMAGE_BYTES, MODEL_NAMES, ROOT,
                            InferenceEngine, InferenceError, available_devices, decode_image,
-                           png_preview, resolve_device,
+                           normalize_checkpoint_path, png_preview, resolve_device,
                            validate_checkpoint_path)
 
 
@@ -39,8 +39,8 @@ engine = InferenceEngine()
 
 class Settings(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    cfp_weight_path: str = Field(min_length=1, max_length=4096)
-    oct_weight_path: str = Field(min_length=1, max_length=4096)
+    cfp_weight_path: str = Field(max_length=4096)
+    oct_weight_path: str = Field(max_length=4096)
     institution: str = Field(default="JingWei System", max_length=120)
     device: Literal["auto", "cpu", "mps"] = "auto"
     include_heatmap: bool = False
@@ -248,11 +248,18 @@ def put_settings(settings: SettingsUpdate):
                 raise HTTPException(400, "Enter an API key for the new server after changing the API origin.")
             if not all(values[name] for name in ("llm_base_url", "llm_model", "llm_api_key")):
                 raise HTTPException(400, "Enter an API Base URL, model name, and API key to enable language model interpretation.")
-        values.update({
-            "cfp_weight_path": str(validate_checkpoint_path(settings.cfp_weight_path)),
-            "oct_weight_path": str(validate_checkpoint_path(settings.oct_weight_path)),
-            "institution": settings.institution.strip(),
-        })
+        for modality in ("cfp", "oct"):
+            name = modality + "_weight_path"
+            path = normalize_checkpoint_path(values[name])
+            # An unused modality may still have its missing default path. It must
+            # not prevent configuration of the other model or report settings.
+            if path and path != normalize_checkpoint_path(getattr(old, name)):
+                try:
+                    validate_checkpoint_path(path)
+                except InferenceError as exc:
+                    raise InferenceError(f"{modality.upper()}: {exc}", exc.status_code) from None
+            values[name] = path
+        values["institution"] = settings.institution.strip()
         resolved = Settings.model_validate(values)
         resolve_device(resolved.device)
         try:
@@ -260,8 +267,9 @@ def put_settings(settings: SettingsUpdate):
         except OSError as exc:
             LOGGER.exception("Unable to save JingWei settings")
             raise HTTPException(500, "Cannot save settings. Check write access to the runtime directory.") from exc
-        if any(getattr(resolved, name) != getattr(old, name)
-               for name in ("cfp_weight_path", "oct_weight_path", "device")):
+        if (resolved.device != old.device or any(
+                normalize_checkpoint_path(getattr(resolved, name)) != normalize_checkpoint_path(getattr(old, name))
+                for name in ("cfp_weight_path", "oct_weight_path"))):
             engine.clear()
         return resolved.public()
 
@@ -276,8 +284,8 @@ def health():
             device = "unavailable"
         models = {}
         for modality in ("cfp", "oct"):
-            path = getattr(settings, modality + "_weight_path")
-            models[modality] = {"exists": Path(path).is_file(),
+            path = normalize_checkpoint_path(getattr(settings, modality + "_weight_path"))
+            models[modality] = {"exists": bool(path) and Path(path).is_file(),
                                 "loaded": engine.loaded(modality, path, device),
                                 "name": MODEL_NAMES[modality]}
         available = reference.SOURCE.is_file()
@@ -307,8 +315,14 @@ def predict(request: PredictRequest):
     try:
         with engine.lock:
             settings = settings_store.value
+            path = getattr(settings, request.modality + "_weight_path")
+            if not normalize_checkpoint_path(path):
+                raise InferenceError(
+                    f"No {request.modality.upper()} weights configured. "
+                    "Set the checkpoint path for this modality in Settings before analysis."
+                )
             return engine.predict(request.modality, request.image_base64,
-                                  getattr(settings, request.modality + "_weight_path"), settings.device,
+                                  path, settings.device,
                                   include_heatmap=settings.include_heatmap)
     except InferenceError:
         raise

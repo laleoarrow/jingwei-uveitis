@@ -8,7 +8,9 @@ import shutil
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "static"
 DOCS = ROOT / "docs"
-VERSION = "workbench-demo-5"
+VERSION = "workbench-demo-7"
+DOWNLOAD_URL = "https://github.com/laleoarrow/jingwei-uveitis/archive/refs/heads/main.zip"
+INSTALL_URL = "https://github.com/laleoarrow/jingwei-uveitis#installation"
 
 
 def replace_once(text, old, new):
@@ -31,12 +33,31 @@ html, count = re.subn(r'  <script src="/app\.js(?:\?[^\"]*)?" defer></script>', 
 assert count == 1, 'Review the local application script link.'
 html = html.replace('src="/jingwei-wordmark.svg', 'src="jingwei-wordmark.svg')
 html = replace_once(html, '  <title>JingWei System</title>', '  <title>JingWei System · Demo</title>\n  <meta http-equiv="Content-Security-Policy" content="default-src \'self\'; script-src \'self\'; style-src \'self\' \'unsafe-inline\'; img-src \'self\' blob: data:; connect-src \'none\'; font-src \'none\'; object-src \'none\'; base-uri \'self\'; form-action \'none\'">')
-html = replace_once(html, '    <main>\n', '    <main>\n      <aside class="demo-notice" aria-label="Demo notice"><span class="demo-notice-badge">Demo only</span><div class="demo-notice-copy"><strong>No image analysis is performed.</strong><span>Results are fixed examples, not predictions from your image.</span></div></aside>\n')
+html = replace_once(html, '<body>\n', f'''<body>
+  <dialog id="demoEntryDialog" class="demo-entry-dialog" aria-labelledby="demoEntryTitle" aria-describedby="demoEntryDescription">
+    <span class="demo-notice-badge">Demo only</span>
+    <h2 id="demoEntryTitle">JingWei online demo</h2>
+    <div id="demoEntryDescription">
+      <p>Explore the JingWei workflow, visualizations, and report layout.</p>
+      <p class="demo-entry-warning"><strong>No image analysis is performed.</strong> All results are illustrative and are not calculated from your image.</p>
+      <p>For actual analysis, download the offline app, follow the installation guide, and configure your model weights in Settings before selecting an image.</p>
+    </div>
+    <div class="demo-download-actions"><a class="button button-primary" href="{DOWNLOAD_URL}">Download offline app <span aria-hidden="true">↓</span></a><a class="demo-setup-link" href="{INSTALL_URL}" target="_blank" rel="noopener">Installation guide ↗</a></div>
+    <button class="button button-secondary demo-entry-continue" id="continueDemo" type="button" autofocus>Continue to demo</button>
+  </dialog>
+''')
+html = replace_once(html, '    <main>\n', f'''    <main>
+      <aside class="demo-notice" aria-label="Demo notice">
+        <span class="demo-notice-badge">Demo only</span>
+        <div class="demo-notice-copy"><strong>No image analysis is performed.</strong><span>Results are fixed examples, not predictions from your image.</span></div>
+        <div class="demo-download"><a class="button button-primary" href="{DOWNLOAD_URL}">Download offline app <span aria-hidden="true">↓</span></a><a class="demo-setup-link" href="{INSTALL_URL}" target="_blank" rel="noopener">Installation guide ↗</a></div>
+      </aside>
+''')
 html = replace_once(html, 'accept=".jpg,.jpeg,.png,.tif,.tiff,.webp,image/jpeg,image/png,image/tiff,image/webp"', 'accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"')
 html = html.replace('<span>This image</span>', '<span>Demo result</span>')
-html = replace_section(html, '      <section id="settingsView"', '      <section id="reportView"', '''      <section id="settingsView" class="view hidden">
+html = replace_section(html, '      <section id="settingsView"', '      <section id="reportView"', f'''      <section id="settingsView" class="view hidden">
         <div class="page-heading"><h1>Settings</h1></div>
-        <section class="settings-card demo-local-settings"><h2>Offline use</h2><p>Configure model weights to analyse CFP or OCT images offline.</p><a class="button button-primary" href="https://github.com/laleoarrow/jingwei-uveitis#readme">Installation &amp; source ↗</a></section>
+        <section class="settings-card demo-local-settings"><h2>Offline use</h2><p>Download and unzip the app, then double-click <strong>start.command</strong> on macOS or <strong>start.bat</strong> on Windows. The launcher installs the environment and opens JingWei. Model weights are supplied separately.</p><div class="demo-download-actions"><a class="button button-primary" href="{DOWNLOAD_URL}">Download offline app <span aria-hidden="true">↓</span></a><a class="demo-setup-link" href="{INSTALL_URL}" target="_blank" rel="noopener">Installation guide ↗</a></div></section>
       </section>
 ''')
 
@@ -92,6 +113,11 @@ app = app.replace(' of the analyzed field', ' preview; not analyzed')
 app = app.replace('This image</span>', 'Demo result</span>')
 app = app.replace('FFA reference · ${e(referenceTitle)}', 'FFA reference · ${e(referenceTitle)} · illustrative marker')
 app = replace_section(app, '    // Licensed local faces are optional', '    if (state.result !== result', '    await document.fonts.ready;\n')
+app = replace_once(app, '\ninitialize();', '''
+const demoEntryDialog = document.getElementById('demoEntryDialog');
+document.getElementById('continueDemo').addEventListener('click', () => demoEntryDialog.close());
+demoEntryDialog.showModal();
+initialize();''')
 
 css = (STATIC / "styles.css").read_text(encoding="utf-8")
 css, removed = re.subn(r'@font-face\s*\{[^}]*\}\s*', '', css)

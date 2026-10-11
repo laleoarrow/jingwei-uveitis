@@ -68,8 +68,9 @@ function renderHealth() {
   for (const modality of ['cfp', 'oct']) {
     const model = health?.models?.[modality];
     const label = $(`${modality}WeightState`);
-    label.textContent = model ? model.exists ? 'Model ready' : 'Weights not found' : 'Disconnected';
-    label.className = `weight-state ${model?.exists ? 'present' : 'missing'}`;
+    const unconfigured = state.settings?.[`${modality}_weight_path`] === '';
+    label.textContent = model ? model.exists ? 'Model ready' : unconfigured ? 'Not configured' : 'Weights not found' : 'Disconnected';
+    label.className = `weight-state ${model?.exists ? 'present' : unconfigured ? '' : 'missing'}`;
   }
   const model = health?.models?.[state.modality];
   $('activeModelStatus').textContent = model ? model.exists ? 'Model ready' : 'Weights not found' : 'Disconnected';
@@ -693,7 +694,7 @@ async function initialize() {
   populateSettings();
   renderResult();
   await Promise.allSettled([
-    api('/api/settings').then((settings) => { state.settings = settings; populateSettings(); }).catch(() => setNotice('serviceNotice', 'Could not load settings. Start the service and refresh.', true)),
+    api('/api/settings').then((settings) => { state.settings = settings; populateSettings(); renderHealth(); }).catch(() => setNotice('serviceNotice', 'Could not load settings. Start the service and refresh.', true)),
     refreshHealth(), loadReference(),
   ]);
 }

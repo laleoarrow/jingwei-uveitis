@@ -72,11 +72,23 @@ def resolve_device(requested: str) -> str:
     return "mps"
 
 
-def validate_checkpoint_path(raw_path: str) -> Path:
+def normalize_checkpoint_path(raw_path: str) -> str:
+    raw_path = raw_path.strip()
+    if len(raw_path) >= 2 and raw_path[0] == raw_path[-1] and raw_path[0] in {"'", '"'}:
+        raw_path = raw_path[1:-1].strip()
+    if not raw_path:
+        return ""
     path = Path(raw_path).expanduser()
     if not path.is_absolute():
         path = ROOT / path
-    path = path.resolve()
+    return str(path.resolve())
+
+
+def validate_checkpoint_path(raw_path: str) -> Path:
+    normalized = normalize_checkpoint_path(raw_path)
+    if not normalized:
+        raise InferenceError("No model weights configured. Set the checkpoint path in Settings before analysis.")
+    path = Path(normalized)
     if path.suffix.lower() not in {".pth", ".pt"}:
         raise InferenceError("Model weights must be a .pth or .pt file.")
     if not path.is_file():
@@ -163,7 +175,10 @@ class InferenceEngine:
             if not self._cache:
                 return False
             try:
-                resolved = Path(path).expanduser().resolve()
+                normalized = normalize_checkpoint_path(path)
+                if not normalized:
+                    return False
+                resolved = Path(normalized)
                 return (
                     self._cache["modality"] == modality
                     and self._cache["path"] == resolved

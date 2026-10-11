@@ -135,6 +135,7 @@ select { cursor: pointer; }
 .llm-key-row input { flex: 1; min-width: 0; }
 .llm-key-row button { flex-shrink: 0; white-space: nowrap; }
 .settings-note { margin: 16px 0 0; color: #606976; font-size: 14px; }
+#weightPathHint { margin: -12px 0 24px; }
 
 /* Demo uses system fonts; no proprietary font files are distributed. */
 body:has(#reportView:not(.hidden)) { background: #f5f5f5; }
