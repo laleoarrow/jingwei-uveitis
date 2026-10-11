@@ -253,3 +253,68 @@ for (const phase of ['decoding', 'encoding']) {
     assert.equal(app.element('predictionError').textContent, '');
   });
 }
+
+function demoInstallButtons(clipboard) {
+  const demoSource = readFileSync(join(__dirname, 'docs/app.js'), 'utf8');
+  const handlers = demoSource.slice(demoSource.indexOf('const jingweiInstallPrompt = '), demoSource.indexOf('const demoEntryDialog = '));
+  const buttons = Array.from({ length: 3 }, () => {
+    const message = { textContent: '' }, manualCopy = { hidden: true };
+    const feedback = { hidden: true, querySelector: (tag) => tag === 'span' ? message : manualCopy };
+    const button = {
+      disabled: false, textContent: 'Install with LLM', feedback, message, manualCopy,
+      closest: () => ({ querySelector: () => feedback }),
+      addEventListener: (event, handler) => { assert.equal(event, 'click'); button.click = handler; },
+    };
+    return button;
+  });
+  const timers = new Map();
+  let nextTimer = 0;
+  vm.runInNewContext(handlers, {
+    document: { querySelectorAll: () => buttons }, navigator: { clipboard },
+    setTimeout: (handler) => { timers.set(++nextTimer, handler); return nextTimer; },
+    clearTimeout: (id) => timers.delete(id),
+  });
+  return { buttons, timers };
+}
+
+test('all demo installation buttons copy the complete README prompt and show confirmation', async () => {
+  const copied = [];
+  const { buttons, timers } = demoInstallButtons({ writeText: async (text) => copied.push(text) });
+  const readme = readFileSync(join(__dirname, 'README.md'), 'utf8');
+  const expected = readme.split('### Install with LLM\n')[1].match(/```text\n([\s\S]*?)\n```/)[1];
+  for (const button of buttons) {
+    await button.click();
+    assert.equal(button.textContent, 'Copied');
+    assert.equal(button.disabled, false);
+    assert.equal(button.feedback.hidden, false);
+    assert.equal(button.manualCopy.hidden, true);
+    assert.match(button.message.textContent, /Paste into Codex/);
+  }
+  assert.deepEqual(copied, Array(3).fill(expected));
+  for (const reset of timers.values()) reset();
+  assert.ok(buttons.every((button) => button.textContent === 'Install with LLM'));
+});
+
+test('clipboard rejection exposes manual copy and a successful retry clears the failure', async () => {
+  let blocked = true;
+  const { buttons } = demoInstallButtons({ writeText: async () => { if (blocked) throw new Error('Permission denied'); } });
+  const button = buttons[0];
+  await button.click();
+  assert.equal(button.textContent, 'Install with LLM');
+  assert.equal(button.disabled, false);
+  assert.equal(button.feedback.hidden, false);
+  assert.equal(button.manualCopy.hidden, false);
+  assert.match(button.message.textContent, /Could not copy/);
+  blocked = false;
+  await button.click();
+  assert.equal(button.textContent, 'Copied');
+  assert.equal(button.manualCopy.hidden, true);
+});
+
+test('browsers without clipboard access offer manual copy rather than false success', async () => {
+  const { buttons } = demoInstallButtons(undefined);
+  await buttons[0].click();
+  assert.equal(buttons[0].textContent, 'Install with LLM');
+  assert.equal(buttons[0].manualCopy.hidden, false);
+  assert.equal(buttons[0].disabled, false);
+});
