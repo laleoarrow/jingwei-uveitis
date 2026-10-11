@@ -135,6 +135,7 @@ select { cursor: pointer; }
 .llm-key-row input { flex: 1; min-width: 0; }
 .llm-key-row button { flex-shrink: 0; white-space: nowrap; }
 .settings-note { margin: 16px 0 0; color: #606976; font-size: 14px; }
+#weightPathHint { margin: -12px 0 24px; }
 
 /* Original report faces; equal-level sections share one condensed heading style. */
 @font-face { font-family: "Helvetica Neue LT Std Light"; src: url("/fonts/HelveticaNeueLTStd-Lt.woff2") format("woff2"); font-style: normal; font-weight: 300; font-display: block; }

@@ -1,12 +1,26 @@
 /* Demo-only additions. The workbench and report styles are generated from static/. */
+.demo-entry-dialog { width: min(560px, calc(100% - 32px)); max-height: calc(100% - 32px); margin: auto; padding: 32px; border: 1px solid #dce3df; border-radius: 10px; background: white; color: var(--ink); box-shadow: 0 20px 70px #102c2433; }
+.demo-entry-dialog::backdrop { background: #102c2480; }
+.demo-entry-dialog h2 { margin: 18px 0 16px; font-size: 25px; line-height: 1.25; font-weight: 600; }
+.demo-entry-dialog p { margin: 0 0 18px; color: #626b78; font-size: 15px; line-height: 1.65; }
+.demo-entry-dialog .demo-entry-warning { color: #183e34; }
+.demo-entry-warning strong { display: block; }
+.demo-entry-continue { display: flex; margin: 26px 0 0 auto; }
+@media (max-width: 600px) { .demo-entry-dialog { padding: 24px; } .demo-entry-continue { width: 100%; } }
 .demo-notice { display: flex; align-items: center; gap: 16px; margin: -15px 0 26px; padding: 16px 20px; border: 1px solid #bfd6c7; border-left: 4px solid #245448; border-radius: 4px; background: #edf5ef; color: #183e34; line-height: 1.5; }
 .demo-notice-badge { flex-shrink: 0; padding: 5px 9px; border-radius: 3px; background: #245448; color: #fff; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
 .demo-notice-copy strong { display: block; font-size: 16px; font-weight: 600; }
 .demo-notice-copy > span { display: block; margin-top: 2px; color: #365b4e; font-size: 14px; }
+.demo-notice-copy { flex: 1; min-width: 0; }
+.demo-download { display: flex; flex-direction: column; align-items: center; gap: 6px; margin-left: auto; flex-shrink: 0; }
+.demo-setup-link { font-size: 13px; color: #245448; text-decoration: underline; text-underline-offset: 3px; }
+.demo-download-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
+@media (max-width: 860px) { .demo-notice { flex-wrap: wrap; } .demo-download { width: 100%; flex-direction: row; flex-wrap: wrap; gap: 16px; } }
 @media (max-width: 600px) { .demo-notice { align-items: flex-start; flex-direction: column; gap: 9px; padding: 14px 16px; } }
 .demo-local-settings { max-width: 620px; }
 .demo-local-settings p { color: #626b78; font-size: 15px; line-height: 1.65; margin: 18px 0 24px; }
 .demo-local-settings a { text-decoration: none; }
+.demo-local-settings .demo-setup-link { text-decoration: underline; }
 .report-header-meta { color: #245448; }
 .report-page { width: min(210mm, 100%); }
-@media print { .demo-notice { display: none !important; } .report-page { width: 182mm; } }
+@media print { .demo-notice, .demo-entry-dialog { display: none !important; } .report-page { width: 182mm; } }

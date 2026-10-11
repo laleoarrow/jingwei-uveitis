@@ -28,14 +28,16 @@ The launcher installs Python 3.12 and the required packages in the application f
 
 **Model weights are supplied separately. Access details will be announced later.** You can open the interface without weights, but image analysis requires them.
 
-Once you receive the files, create a `weights` folder inside the application folder and place them there:
+Once you receive the files, open **Settings**, enter the file path for **CFP**, **OCT**, or both, and select **Save changes**. Keep the original filenames; you can paste an absolute path, including one copied with quotation marks. Leave an unused modality blank.
+
+Alternatively, these default locations are recognised automatically:
 
 | Input | File location |
 |---|---|
 | CFP | `weights/CFP.pth` |
 | OCT | `weights/OCT.pth` |
 
-Open **Settings** in the webpage, enter both file paths, and select **Save changes**. If the files have different names or locations, enter their actual paths without quotation marks. Both paths must point to existing files. Leave **Processing device** on **Automatic** and **Include heatmap** and **Use LLM** unchecked for the first assessment.
+Leave **Processing device** on **Automatic** and **Include heatmap** and **Use LLM** unchecked for the first assessment.
 
 ## Use
 
@@ -56,7 +58,7 @@ Optional settings apply to the next assessment:
 | Problem | What to do |
 |---|---|
 | Installation stops during a download | Check your internet connection and run the launcher again. |
-| Weights are not found or settings will not save | Check that both weight files exist and that their paths in Settings are correct. |
+| Weights are not found | Check the file path for the selected modality in Settings and select **Save changes**. The other modality is optional. |
 | The browser does not open | Keep the terminal running and open the address printed there, usually **http://127.0.0.1:8765/**. Open the app through this address rather than `index.html`. |
 | The app is already running | Use the existing browser page. To restart it, stop the previous terminal with **Ctrl+C**, then run the launcher again. |
 

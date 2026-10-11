@@ -12,7 +12,8 @@ from PIL import Image
 
 import server
 from inference import (InferenceEngine, InferenceError, _fingerprint, available_devices,
-                       decode_image, png_preview, resolve_device)
+                       decode_image, normalize_checkpoint_path, png_preview, resolve_device,
+                       validate_checkpoint_path)
 
 
 def image_payload(mode="RGB", size=(320, 240), image_format="PNG"):
@@ -78,6 +79,34 @@ class ImageTests(unittest.TestCase):
                     result = engine.predict("cfp", image_payload(), str(checkpoint), "cpu")
                 self.assertEqual(result["positive"], margin >= 0)
                 self.assertEqual(result["probability"] >= .5, margin >= 0)
+
+
+class CheckpointPathTests(unittest.TestCase):
+    def test_quoted_custom_paths_and_project_relative_paths(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder).resolve()
+            checkpoint = root / "my model weights.pt"
+            checkpoint.write_bytes(b"test fixture")
+            with patch("inference.ROOT", root):
+                for raw in (str(checkpoint), f'  "{checkpoint}"  ',
+                            f" '{checkpoint}' ", '"my model weights.pt"'):
+                    with self.subTest(raw=raw):
+                        self.assertEqual(validate_checkpoint_path(raw), checkpoint)
+                self.assertEqual(normalize_checkpoint_path("   "), "")
+                with self.assertRaisesRegex(InferenceError, "Set the checkpoint path in Settings"):
+                    validate_checkpoint_path('""')
+
+    def test_cache_lookup_supports_relative_quoted_paths_and_empty_configuration(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder).resolve()
+            checkpoint = root / "custom weights.pth"
+            checkpoint.write_bytes(b"test fixture")
+            engine = InferenceEngine()
+            engine._cache = {"modality": "cfp", "path": checkpoint, "device": "cpu",
+                             "fingerprint": _fingerprint(checkpoint)}
+            with patch("inference.ROOT", root):
+                self.assertTrue(engine.loaded("cfp", '"custom weights.pth"', "cpu"))
+                self.assertFalse(engine.loaded("cfp", "", "cpu"))
 
 
 class ServerTests(unittest.TestCase):
@@ -165,6 +194,117 @@ class ServerTests(unittest.TestCase):
             self.assertFalse(legacy.value.include_heatmap)
             with patch.object(server, "settings_store", legacy):
                 self.assertFalse(self.client.get("/api/settings").json()["include_heatmap"])
+
+    def test_each_modality_can_use_its_own_filename_without_the_other_weights(self):
+        for modality in ("cfp", "oct"):
+            with self.subTest(modality=modality), tempfile.TemporaryDirectory() as folder:
+                root = Path(folder).resolve()
+                paths = {name: root / (name.upper() + ".pth") for name in ("cfp", "oct")}
+                with patch.object(server, "DEFAULT_PATHS", paths):
+                    store = server.SettingsStore(root / "settings.json")
+                checkpoint = root / f"my {modality} checkpoint.pt"
+                checkpoint.write_bytes(b"test fixture")
+                field = modality + "_weight_path"
+                settings = {**store.value.model_dump(), field: f' "{checkpoint}" '}
+                with patch.object(server, "settings_store", store):
+                    response = self.client.put("/api/settings", json=settings)
+                    self.assertEqual(response.status_code, 200, response.text)
+                    self.assertEqual(response.json()[field], str(checkpoint))
+                reloaded = server.SettingsStore(store.path)
+                self.assertEqual(getattr(reloaded.value, field), str(checkpoint))
+                unused = "oct" if modality == "cfp" else "cfp"
+                self.assertEqual(getattr(reloaded.value, unused + "_weight_path"), str(paths[unused]))
+                with patch.object(server, "settings_store", reloaded), patch.object(server.engine, "predict", return_value={"score": 1}) as predict:
+                    response = self.client.post("/api/predict", json={
+                        "modality": modality, "image_base64": "test image"})
+                    self.assertEqual(response.status_code, 200, response.text)
+                    predict.assert_called_once_with(modality, "test image", str(checkpoint),
+                                                    reloaded.value.device, include_heatmap=False)
+                    health = self.client.get("/api/health").json()["models"]
+                    self.assertTrue(health[modality]["exists"])
+                    self.assertFalse(health[unused]["exists"])
+
+    def test_unused_modality_can_be_blank_and_predict_reports_how_to_configure_it(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store = server.SettingsStore(Path(folder) / "settings.json")
+            with patch.object(server, "settings_store", store):
+                for modality in ("cfp", "oct"):
+                    settings = {**store.value.model_dump(), modality + "_weight_path": "  "}
+                    response = self.client.put("/api/settings", json=settings)
+                    self.assertEqual(response.status_code, 200, response.text)
+                    self.assertEqual(response.json()[modality + "_weight_path"], "")
+                    self.assertEqual(getattr(server.SettingsStore(store.path).value,
+                                             modality + "_weight_path"), "")
+                    health = self.client.get("/api/health").json()["models"][modality]
+                    self.assertFalse(health["exists"])
+                    self.assertFalse(health["loaded"])
+                    with patch.object(server.engine, "predict") as predict:
+                        response = self.client.post("/api/predict", json={
+                            "modality": modality, "image_base64": image_payload()})
+                    self.assertEqual(response.status_code, 400)
+                    self.assertIn(f"No {modality.upper()} weights configured", response.json()["detail"])
+                    self.assertIn("Settings", response.json()["detail"])
+                    predict.assert_not_called()
+
+    def test_missing_unchanged_weights_do_not_block_report_or_llm_settings(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            paths = {name: root / (name.upper() + ".pth") for name in ("cfp", "oct")}
+            with patch.object(server, "DEFAULT_PATHS", paths):
+                store = server.SettingsStore(root / "settings.json")
+            settings = {**store.value.model_dump(), "institution": "New institution",
+                        "llm_enabled": True, "llm_base_url": "https://example.invalid/v1",
+                        "llm_model": "test-model", "llm_api_key": "test-key"}
+            with patch.object(server, "settings_store", store), patch.object(server.engine, "clear") as clear:
+                response = self.client.put("/api/settings", json=settings)
+                self.assertEqual(response.status_code, 200, response.text)
+                clear.assert_not_called()
+            reloaded = server.SettingsStore(store.path).value
+            self.assertEqual(reloaded.institution, "New institution")
+            self.assertTrue(reloaded.llm_enabled)
+            self.assertEqual(reloaded.llm_model, "test-model")
+
+    def test_invalid_changed_weights_leave_saved_settings_and_cached_model_intact(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store = server.SettingsStore(Path(folder) / "settings.json")
+            store.save(store.value)
+            saved = store.path.read_bytes()
+            original = store.value
+            engine = InferenceEngine()
+            cached = {"device": "cpu"}
+            engine._cache = cached
+            with patch.object(server, "settings_store", store), patch.object(server, "engine", engine), patch.object(engine, "clear") as clear:
+                for modality in ("cfp", "oct"):
+                    settings = {**original.model_dump(), "institution": "Should not save",
+                                modality + "_weight_path": str(Path(folder) / "missing.pth")}
+                    response = self.client.put("/api/settings", json=settings)
+                    self.assertEqual(response.status_code, 400)
+                    self.assertIn(f"{modality.upper()}: Model weight file not found", response.json()["detail"])
+                    self.assertIs(store.value, original)
+                    self.assertEqual(store.path.read_bytes(), saved)
+                    self.assertIs(engine._cache, cached)
+                clear.assert_not_called()
+
+    def test_settings_write_failure_keeps_existing_model_and_configuration(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store = server.SettingsStore(Path(folder) / "settings.json")
+            store.save(store.value)
+            saved = store.path.read_bytes()
+            original = store.value
+            replacement = Path(folder) / "replacement.pth"
+            replacement.write_bytes(b"test fixture")
+            engine = InferenceEngine()
+            cached = {"device": "cpu"}
+            engine._cache = cached
+            with patch.object(server, "settings_store", store), patch.object(server, "engine", engine), patch.object(Path, "replace", side_effect=OSError("test write failure")), patch.object(engine, "clear") as clear, self.assertLogs(server.LOGGER, level="ERROR"):
+                response = self.client.put("/api/settings", json={
+                    **original.model_dump(), "cfp_weight_path": str(replacement)})
+            self.assertEqual(response.status_code, 500)
+            self.assertIs(store.value, original)
+            self.assertEqual(store.path.read_bytes(), saved)
+            self.assertIs(engine._cache, cached)
+            self.assertFalse(store.path.with_suffix(".tmp").exists())
+            clear.assert_not_called()
 
     def test_non_model_settings_preserve_loaded_model(self):
         with tempfile.TemporaryDirectory() as folder:

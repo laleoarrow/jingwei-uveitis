@@ -8,14 +8,25 @@
   <link rel="icon" href="data:,">
   <title>JingWei System · Demo</title>
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; connect-src 'none'; font-src 'none'; object-src 'none'; base-uri 'self'; form-action 'none'">
-  <link rel="stylesheet" href="styles.css?v=workbench-demo-5">
+  <link rel="stylesheet" href="styles.css?v=workbench-demo-7">
   <style id="reportPrintMetadata"></style>
-  <link rel="stylesheet" href="demo.css?v=workbench-demo-5">
-  <script src="reference-data.js?v=workbench-demo-5" defer></script>
-  <script src="demo-adapter.js?v=workbench-demo-5" defer></script>
-  <script src="app.js?v=workbench-demo-5" defer></script>
+  <link rel="stylesheet" href="demo.css?v=workbench-demo-7">
+  <script src="reference-data.js?v=workbench-demo-7" defer></script>
+  <script src="demo-adapter.js?v=workbench-demo-7" defer></script>
+  <script src="app.js?v=workbench-demo-7" defer></script>
 </head>
 <body>
+  <dialog id="demoEntryDialog" class="demo-entry-dialog" aria-labelledby="demoEntryTitle" aria-describedby="demoEntryDescription">
+    <span class="demo-notice-badge">Demo only</span>
+    <h2 id="demoEntryTitle">JingWei online demo</h2>
+    <div id="demoEntryDescription">
+      <p>Explore the JingWei workflow, visualizations, and report layout.</p>
+      <p class="demo-entry-warning"><strong>No image analysis is performed.</strong> All results are illustrative and are not calculated from your image.</p>
+      <p>For actual analysis, download the offline app, follow the installation guide, and configure your model weights in Settings before selecting an image.</p>
+    </div>
+    <div class="demo-download-actions"><a class="button button-primary" href="https://github.com/laleoarrow/jingwei-uveitis/archive/refs/heads/main.zip">Download offline app <span aria-hidden="true">↓</span></a><a class="demo-setup-link" href="https://github.com/laleoarrow/jingwei-uveitis#installation" target="_blank" rel="noopener">Installation guide ↗</a></div>
+    <button class="button button-secondary demo-entry-continue" id="continueDemo" type="button" autofocus>Continue to demo</button>
+  </dialog>
   <header class="app-header">
     <a class="brand" href="#workspace" aria-label="JingWei home"><img class="brand-wordmark" src="jingwei-wordmark.svg?v=20261010" alt="JingWei"> <small class="brand-companion">精卫</small></a>
     <nav aria-label="Main navigation">
@@ -28,7 +39,11 @@
   </header>
   <div class="app-shell">
     <main>
-      <aside class="demo-notice" aria-label="Demo notice"><span class="demo-notice-badge">Demo only</span><div class="demo-notice-copy"><strong>No image analysis is performed.</strong><span>Results are fixed examples, not predictions from your image.</span></div></aside>
+      <aside class="demo-notice" aria-label="Demo notice">
+        <span class="demo-notice-badge">Demo only</span>
+        <div class="demo-notice-copy"><strong>No image analysis is performed.</strong><span>Results are fixed examples, not predictions from your image.</span></div>
+        <div class="demo-download"><a class="button button-primary" href="https://github.com/laleoarrow/jingwei-uveitis/archive/refs/heads/main.zip">Download offline app <span aria-hidden="true">↓</span></a><a class="demo-setup-link" href="https://github.com/laleoarrow/jingwei-uveitis#installation" target="_blank" rel="noopener">Installation guide ↗</a></div>
+      </aside>
       <section id="workspaceView" class="view">
         <div class="page-heading">
           <h1>RVL assessment</h1>
@@ -98,7 +113,7 @@
       </section>
       <section id="settingsView" class="view hidden">
         <div class="page-heading"><h1>Settings</h1></div>
-        <section class="settings-card demo-local-settings"><h2>Offline use</h2><p>Configure model weights to analyse CFP or OCT images offline.</p><a class="button button-primary" href="https://github.com/laleoarrow/jingwei-uveitis#readme">Installation &amp; source ↗</a></section>
+        <section class="settings-card demo-local-settings"><h2>Offline use</h2><p>Download and unzip the app, then double-click <strong>start.command</strong> on macOS or <strong>start.bat</strong> on Windows. The launcher installs the environment and opens JingWei. Model weights are supplied separately.</p><div class="demo-download-actions"><a class="button button-primary" href="https://github.com/laleoarrow/jingwei-uveitis/archive/refs/heads/main.zip">Download offline app <span aria-hidden="true">↓</span></a><a class="demo-setup-link" href="https://github.com/laleoarrow/jingwei-uveitis#installation" target="_blank" rel="noopener">Installation guide ↗</a></div></section>
       </section>
       <section id="reportView" class="view hidden"><div class="report-toolbar"><button id="backWorkspace" class="button button-secondary" type="button">Back to analysis</button><button id="printReport" class="button button-primary" type="button">Print / Save PDF</button></div><div id="reportPage" class="report-page"></div></section>
     </main>

@@ -579,9 +579,12 @@ async function initialize() {
   populateSettings();
   renderResult();
   await Promise.allSettled([
-    api('/api/settings').then((settings) => { state.settings = settings; populateSettings(); }).catch(() => setNotice('serviceNotice', 'Could not load settings. Start the service and refresh.', true)),
+    api('/api/settings').then((settings) => { state.settings = settings; populateSettings(); renderHealth(); }).catch(() => setNotice('serviceNotice', 'Could not load settings. Start the service and refresh.', true)),
     refreshHealth(), loadReference(),
   ]);
 }
 
+const demoEntryDialog = document.getElementById('demoEntryDialog');
+document.getElementById('continueDemo').addEventListener('click', () => demoEntryDialog.close());
+demoEntryDialog.showModal();
 initialize();
