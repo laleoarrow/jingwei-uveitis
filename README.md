@@ -57,6 +57,7 @@ Optional settings apply to the next assessment:
 
 | Problem | What to do |
 |---|---|
+| macOS cannot verify `start.command` | If you downloaded JingWei from this repository, open **System Settings → Privacy & Security** after the blocked launch. Under **Security**, select **Open Anyway** for `start.command`, then confirm **Open**. You can then double-click the launcher as usual. See [Apple’s instructions](https://support.apple.com/en-us/102445). |
 | Installation stops during a download | Check your internet connection and run the launcher again. |
 | Weights are not found | Check the file path for the selected modality in Settings and select **Save changes**. The other modality is optional. |
 | The browser does not open | Keep the terminal running and open the address printed there, usually **http://127.0.0.1:8765/**. Open the app through this address rather than `index.html`. |
