@@ -39,6 +39,17 @@ Alternatively, these default locations are recognised automatically:
 
 Leave **Processing device** on **Automatic** and **Include heatmap** and **Use LLM** unchecked for the first assessment.
 
+### Install with LLM
+
+Give Codex, Claude, Gemini, or WorkBuddy the following prompt in a session with terminal access:
+
+```text
+Install and launch JingWei from https://github.com/laleoarrow/jingwei-uveitis on this computer.
+Follow the README and use the launcher for my operating system. Verify that the offline web app opens.
+Ask me for the paths to my CFP and/or OCT weight files and configure them without renaming the files.
+If I do not have weights yet, complete installation and explain how to add them later.
+```
+
 ## Use
 
 1. Select **CFP** or **OCT** in **Analysis** and enter examination details if needed.
