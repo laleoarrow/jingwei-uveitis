@@ -600,7 +600,7 @@ document.querySelectorAll('[data-copy-install]').forEach((button) => {
     try {
       await navigator.clipboard.writeText(jingweiInstallPrompt);
       button.textContent = 'Copied';
-      message.textContent = 'Paste into Codex, Claude, Gemini, or WorkBuddy.';
+      message.textContent = 'Paste into your preferred AI assistant to install JingWei.';
       resetTimer = setTimeout(() => { button.textContent = 'Install with LLM'; }, 3000);
     } catch {
       message.textContent = 'Could not copy automatically.';

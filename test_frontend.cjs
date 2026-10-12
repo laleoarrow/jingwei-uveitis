@@ -288,7 +288,7 @@ test('all demo installation buttons copy the complete README prompt and show con
     assert.equal(button.disabled, false);
     assert.equal(button.feedback.hidden, false);
     assert.equal(button.manualCopy.hidden, true);
-    assert.match(button.message.textContent, /Paste into Codex/);
+    assert.equal(button.message.textContent, 'Paste into your preferred AI assistant to install JingWei.');
   }
   assert.deepEqual(copied, Array(3).fill(expected));
   for (const reset of timers.values()) reset();

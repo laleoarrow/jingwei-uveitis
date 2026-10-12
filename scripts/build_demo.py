@@ -8,7 +8,7 @@ import shutil
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "static"
 DOCS = ROOT / "docs"
-VERSION = "workbench-demo-10"
+VERSION = "workbench-demo-11"
 DOWNLOAD_URL = "https://github.com/laleoarrow/jingwei-uveitis/archive/refs/heads/main.zip"
 WEIGHTS_URL = "https://pan.baidu.com/s/1r7gfecgxxbtCQnV0FmZlSg?pwd=7a7c"
 INSTALL_URL = "https://github.com/laleoarrow/jingwei-uveitis#installation"
@@ -29,7 +29,7 @@ def download_actions():
           <a class="button button-secondary" href="{WEIGHTS_URL}" target="_blank" rel="noopener">Download model weights <span aria-hidden="true">↗</span></a>
           <span class="demo-weight-code">Access code: <strong>7a7c</strong></span>
         </div>
-        <button class="button button-secondary" type="button" data-copy-install title="Copy installation instructions for Codex, Claude, Gemini, or WorkBuddy">Install with LLM</button>
+        <button class="button button-secondary" type="button" data-copy-install title="Copy installation instructions for your AI assistant">Install with LLM</button>
         <a class="button button-secondary demo-setup-link" href="{INSTALL_URL}" target="_blank" rel="noopener">Installation guide <span aria-hidden="true">↗</span></a>
       </div>
       <p class="demo-install-feedback" role="status" aria-live="polite" hidden><span></span> <a href="{LLM_INSTALL_URL}" target="_blank" rel="noopener" hidden>Copy from README ↗</a></p>
@@ -151,7 +151,7 @@ document.querySelectorAll('[data-copy-install]').forEach((button) => {
     try {
       await navigator.clipboard.writeText(jingweiInstallPrompt);
       button.textContent = 'Copied';
-      message.textContent = 'Paste into Codex, Claude, Gemini, or WorkBuddy.';
+      message.textContent = 'Paste into your preferred AI assistant to install JingWei.';
       resetTimer = setTimeout(() => { button.textContent = 'Install with LLM'; }, 3000);
     } catch {
       message.textContent = 'Could not copy automatically.';
