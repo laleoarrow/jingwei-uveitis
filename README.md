@@ -43,7 +43,7 @@ Leave **Processing device** on **Automatic** and **Include heatmap** and **Use L
 
 ### Install with LLM
 
-Give Codex, Claude, Gemini, or WorkBuddy the following prompt in a session with terminal access:
+Give your preferred AI assistant the following prompt in a session with terminal access:
 
 ```text
 Install and launch JingWei from https://github.com/laleoarrow/jingwei-uveitis on this computer.
