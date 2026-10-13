@@ -340,16 +340,31 @@ class ServerTests(unittest.TestCase):
                         clear.assert_called_once_with()
                         self.assertIsNone(engine._cache)
 
-    def test_prediction_uses_saved_heatmap_setting(self):
+    def test_prediction_heatmap_override_is_immediate_and_does_not_change_settings(self):
         with tempfile.TemporaryDirectory() as folder:
             store = server.SettingsStore(Path(folder) / "settings.json")
-            for enabled in (False, True):
-                store.save(store.value.model_copy(update={"include_heatmap": enabled}))
-                with patch.object(server, "settings_store", store), patch.object(server.engine, "predict", return_value={"score": 0}) as predict:
-                    response = self.client.post("/api/predict", json={"modality": "cfp", "image_base64": "image"})
-                    self.assertEqual(response.status_code, 200)
-                    predict.assert_called_once_with("cfp", "image", store.value.cfp_weight_path,
-                                                    store.value.device, include_heatmap=enabled)
+            for modality in ("cfp", "oct"):
+                for saved in (False, True):
+                    store.save(store.value.model_copy(update={"include_heatmap": saved}))
+                    persisted = store.path.read_bytes()
+                    for override in ({}, {"include_heatmap": None}, {"include_heatmap": True}, {"include_heatmap": False}):
+                        with self.subTest(modality=modality, saved=saved, override=override):
+                            expected = saved if override.get("include_heatmap") is None else override["include_heatmap"]
+                            with patch.object(server, "settings_store", store), patch.object(server.engine, "predict", return_value={"score": 0}) as predict:
+                                response = self.client.post("/api/predict", json={"modality": modality, "image_base64": "image", **override})
+                            self.assertEqual(response.status_code, 200, response.text)
+                            predict.assert_called_once_with(modality, "image", getattr(store.value, modality + "_weight_path"),
+                                                            store.value.device, include_heatmap=expected)
+                            self.assertEqual(store.value.include_heatmap, saved)
+                            self.assertEqual(store.path.read_bytes(), persisted)
+
+    def test_prediction_heatmap_override_requires_a_boolean(self):
+        for invalid in ("true", "false", 0, 1):
+            with self.subTest(value=invalid), patch.object(server.engine, "predict") as predict:
+                response = self.client.post("/api/predict", json={
+                    "modality": "cfp", "image_base64": "image", "include_heatmap": invalid})
+                self.assertEqual(response.status_code, 422)
+                predict.assert_not_called()
 
     def test_reference_default_and_missing_group(self):
         result = self.client.get("/api/reference").json()

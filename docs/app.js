@@ -215,6 +215,7 @@ function showPreview(mode) {
 async function useSample() {
   const sequence = state.predictionSequence;
   const modality = state.modality;
+  const includeHeatmap = $('includeHeatmap').checked;
   const button = $('useSample');
   button.disabled = true;
   try {
@@ -229,13 +230,13 @@ async function useSample() {
     if (!blob) throw new Error('Could not load the sample.');
     const file = new File([blob], `AI-generated-${modality.toUpperCase()}-sample.png`, { type: 'image/png' });
     file.jingweiGeneratedSample = true;
-    if (sequence === state.predictionSequence) analyzeFile(file);
+    if (sequence === state.predictionSequence) analyzeFile(file, includeHeatmap);
   } catch {
     if (sequence === state.predictionSequence) setNotice('predictionError', 'The sample could not load. Choose an image or try again.', true);
   } finally { button.disabled = false; }
 }
 
-async function analyzeFile(file) {
+async function analyzeFile(file, includeHeatmap = $('includeHeatmap').checked) {
   if (!file) return;
   const extension = file.name.split('.').pop().toLowerCase();
   const isTiff = false; // TIFF decoding requires the offline application.
@@ -289,10 +290,10 @@ async function analyzeFile(file) {
         $('imageDimensions').textContent = image.width && image.height ? `${image.width} × ${image.height}` : '';
       }).catch(() => { /* Prediction can still provide the final preview. */ });
     }
-    $('predictionPhase').textContent = 'Preparing demo…';
+    $('predictionPhase').textContent = includeHeatmap ? 'Analyzing image with heatmap…' : 'Preparing demo…';
     const prediction = await api('/api/predict', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal,
-      body: JSON.stringify({ modality, filename: file.name, image_base64: imageBase64 }),
+      body: JSON.stringify({ modality, filename: file.name, image_base64: imageBase64, include_heatmap: includeHeatmap }),
     });
     if (sequence !== state.predictionSequence) return;
     if (prediction.modality !== modality || !Number.isFinite(prediction.score) || !Number.isFinite(prediction.probability) || prediction.probability < 0 || prediction.probability > 1) throw new Error('Invalid model response. No report was generated.');
@@ -472,8 +473,8 @@ function renderReport() {
   const includeAttribution = ['ready', 'unavailable'].includes(result.attribution?.status);
   const attribution = result.attribution?.status === 'ready' ? result.attribution : null;
   const imageLegend = !includeAttribution ? '' : attribution && !attribution.empty
-    ? `<div class="report-heatmap-key" role="img" aria-label="Relative contribution toward a higher RVL Score, from low to high"><span>Low</span><span class="report-heatmap-scale" aria-hidden="true"></span><span>High</span><span class="report-heatmap-key-label">Relative attribution</span></div>`
-    : `<p class="report-image-note">${attribution ? 'No positive contribution displayed' : 'Heatmap unavailable'}</p>`;
+    ? `<div class="report-heatmap-key" role="img" aria-label="Relative display scale, not raw attribution units: blue minus one, white zero, red plus one"><span>−1</span><span class="report-heatmap-scale" aria-hidden="true">0</span><span>+1</span><span class="report-heatmap-key-label">Relative display scale</span></div><p class="report-image-note">Red increases and blue decreases the RVL Score relative to a blurred reference. Zero is transparent in the overlay. These maps explain model attribution, not lesion location.</p>`
+    : `<p class="report-image-note">${attribution ? 'No attribution relative to the blurred reference.' : 'Heatmap unavailable'}</p>`;
   const imagePanel = (label, source, unavailable) => `<figure class="report-image"><div class="report-image-frame">${source ? `<img src="${e(source)}" alt="${e(label)} preview; not analyzed">` : `<span class="report-image-placeholder">${unavailable}</span>`}</div><figcaption>${label}</figcaption></figure>`;
   const chart = !compatible ? `<div class="chart-empty">No matching reference for these weights</div>` : state.referencePending ? `<div class="chart-empty">Loading reference…</div>` : state.referenceError ? `<div class="chart-empty">Reference distribution unavailable</div>` : distributionSvg(reference, result).replace('fill="#eff1f4"', 'fill="#252a34"').replace('font-size="15" fill="#252a34"', 'font-size="15" fill="#ffffff"');
   const institution = (snapshot.institution || '').trim();

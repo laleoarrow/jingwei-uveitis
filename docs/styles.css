@@ -179,7 +179,7 @@ body:has(#reportView:not(.hidden)) { background: #f5f5f5; }
 .report-image figcaption { margin-top: 5px; font-size: 9pt; color: #333; text-align: center; }
 .report-image-note { margin: 7px 0 0; font-size: 9pt; color: #444; }
 .report-heatmap-key { display: flex; align-items: center; justify-content: center; gap: 9px; margin-top: 7px; font-size: 9pt; color: #444; break-inside: avoid; }
-.report-heatmap-scale { display: block; flex: none; width: 38mm; height: 3mm; background: linear-gradient(to right, #000080 0%, #0000ff 12.5%, #00ffff 37.5%, #ffff00 62.5%, #ff0000 87.5%, #800000 100%); }
+.report-heatmap-scale { display: flex; align-items: center; justify-content: center; flex: none; width: 38mm; height: 3mm; color: #111; background: linear-gradient(to right, #0000ff 0%, #ffffff 50%, #ff0000 100%); }
 .report-heatmap-key-label { margin-left: 3px; padding-left: 12px; border-left: .5pt solid #888; }
 .report-chart-legend { display: flex; align-items: center; gap: 24px; font-size: 9pt; color: #111; margin-bottom: 7px; }
 .report-chart-legend > span { flex: none; white-space: nowrap; }
