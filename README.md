@@ -1,10 +1,10 @@
 # JingWei · 精卫
 
-JingWei uses color fundus photography (CFP) or OCT images to predict FFA-assessed retinal vascular leakage (RVL) in uveitis.
+JingWei uses color fundus photography (CFP) or optical coherence tomography (OCT) images to predict retinal vascular leakage (RVL) in uveitis, as assessed by fundus fluorescein angiography (FFA).
 
 **[Online demo](https://laleoarrow.github.io/jingwei-uveitis/) · [Installation](#installation) · [Use](#use)**
 
-The online demo illustrates the workflow and report format; it does not analyse images. Follow the steps below to run JingWei offline on your computer.
+The online demo shows the workflow and report format with fixed illustrative results, without running the model or calculating heatmaps. For actual analysis, run JingWei offline as described below.
 
 ## Installation
 
@@ -20,19 +20,19 @@ Download the [source ZIP](https://github.com/laleoarrow/jingwei-uveitis/archive/
 | Windows (64-bit x86) | Double-click **`start.bat`**. |
 | Linux | Open a terminal in the extracted folder and run **`bash start.command`**. |
 
-The launcher installs Python 3.12 and the required packages in the application folder, then opens **[JingWei](http://127.0.0.1:8765/)** in your browser. You do not need to install Python separately. The first installation needs internet access and may take several minutes; progress appears in the terminal window.
+The launcher installs Python 3.12 and the required packages in the application folder, then opens **[JingWei](http://127.0.0.1:8765/)** in your browser. No separate Python installation is needed. Initial setup requires internet access and may take several minutes; progress appears in the terminal.
 
-**Keep the terminal window open** while using JingWei. To stop, press **Ctrl+C** in that window. To reopen, run the same launcher; it reuses the installed environment and saved settings.
+**Keep the terminal open** while using JingWei. Press **Ctrl+C** there to stop. Reopen with the same launcher to reuse the environment and saved settings.
 
 ### 3. Configure the weights
 
 **[Download JingWei model weights](https://pan.baidu.com/s/1r7gfecgxxbtCQnV0FmZlSg?pwd=7a7c)** (Baidu Netdisk) · Access code: `7a7c`.
 
-You can open the interface without weights, but image analysis requires them.
+You can open the interface without weights, but analysis requires them.
 
-After downloading the weights, open **Settings**, enter the file path for **CFP**, **OCT**, or both, and select **Save changes**. Keep the original filenames; you can paste an absolute path, including one copied with quotation marks. Leave an unused modality blank.
+Open **Settings**, enter the weight-file path for **CFP**, **OCT**, or both, and select **Save changes**. Keep the original filenames; quoted absolute paths are accepted. Leave unused modalities blank.
 
-Alternatively, these default locations are recognised automatically:
+Alternatively, these default locations are recognized automatically:
 
 | Input | File location |
 |---|---|
@@ -55,34 +55,54 @@ If I do not have weights yet, complete installation and explain how to add them 
 ## Use
 
 1. Select **CFP** or **OCT** in **Analysis** and enter examination details if needed.
-2. Select **Browse files** to upload an image, or **Use sample** to check the setup with an AI-generated example. The offline sample runs actual analysis and requires the weights.
-3. Wait for the **RVL Score**, **predicted probability** and **analysis time**. The first assessment can take longer while the model loads.
+2. Select **Browse files** to upload an image, or **Use sample** to test the setup. AI-generated samples run through the local model and require weights.
+3. Wait for the **RVL Score**, **predicted probability** and **analysis time**. The first assessment may take longer as the model loads.
 4. Select **Generate report**, then **Print / Save PDF**. For PDF export, choose **A4**, **100% scale**, and turn off browser **headers and footers**.
 
 Supported images: JPEG, PNG, single-page TIFF and WebP, up to 20 MiB each.
 
-**System status** in Settings refreshes every five seconds. It shows service connectivity, available dependencies and the current processing stage. Weight labels distinguish files found from a model actually loaded. Dependency checks confirm that packages are present; model compatibility is checked when the weights load.
+**System status** in Settings refreshes every five seconds. It normally shows **Service: Online**, **Environment: Ready** (required packages present), and **Activity: Idle** (no task running). Active stages—analyzing, heatmap and refining—show elapsed time. Weight labels distinguish files found from models loaded; compatibility is checked when loading.
 
-Optional settings apply to the next assessment:
+### Heatmaps
 
-- **Include heatmap** applies immediately to the next sample or upload; **Save changes** remembers the preference across reloads. It adds signed pixel-level Integrated Gradients maps and overlays to the report and takes longer to compute. Red and blue show contributions that increase and decrease the RVL Score relative to a blurred version of the same image; zero is transparent in the overlay. These maps explain model attribution, not lesion location. If the attribution fails its convergence check, the report marks the heatmap unavailable. The online demo does not calculate heatmaps.
-- **AI-assisted interpretation** rephrases the positive or negative prediction statement through your configured service. Enter its **API URL**, **Model** and **API key** in Settings. A remote service requires internet access and receives only the modality, RVL Score and predicted probability—not images or examination details. Without LLM access, the report uses threshold-based interpretation.
+JingWei uses Integrated Gradients (IG) to show how image regions contribute to the RVL Score.
 
-### IG display
+Turn on **Include heatmap** in **Settings**; it is off by default. Changes apply to the next sample or upload without saving, leaving current results unchanged. **Save changes** keeps the preference across refreshes.
 
-IG explains the fixed logit margin `logits[1] - logits[0]` against a blurred reference. The displayed pixel map sums signed RGB-channel attributions, retaining both signs. For display only, the attribution map receives Gaussian smoothing with σ=1 pixel. Its symmetric red–blue scale uses the 99th percentile of the absolute **raw**, unsmoothed pixel map; values outside that range saturate. The −1 / 0 / +1 legend is a relative display scale, not raw IG units, and intensities are not comparable between images.
+Under **Contributing regions**, **Model input** shows the crop analyzed by the model, not the full upload. **Heatmap** shows the color map alone. **Overlay** places it over that crop so you can compare the colors with fundus or OCT structures.
 
-Overlay opacity increases linearly with the absolute normalized display value, from zero at zero attribution to a maximum of 0.5. Both the original panel and overlay base use the unchanged model-input image; smoothing applies only to the attribution map. Raw signed values remain available in the attribution data. Reported map-stability diagnostics refer to the native patch grid, not pixel-level stability; convergence does not establish precise lesion localization.
+Red shows contributions that raise the RVL Score, favoring a positive prediction; blue shows contributions that lower it. Both are relative to a blurred version of the same input, not a healthy eye. The maps explain the model’s output; they do not identify lesions.
+
+Heatmaps take longer because they require repeated calculations. If the final checks fail, the report shows **Heatmap unavailable**; the valid prediction remains.
+
+<details>
+<summary>Technical details</summary>
+
+Images are resized proportionally to a 256-pixel shorter side and center-cropped to 224 × 224. Captum Integrated Gradients (IG) always explains **RVL Score** (`logits[1] - logits[0]`), not probability, regardless of predicted class. The reference uses Gaussian blur, σ=16 input pixels.
+
+Signed RGB-channel contributions are summed at each pixel rather than pooled into patches for display. Only the displayed map is smoothed (Gaussian σ=1 input pixel); neighboring positive and negative values can cancel. Colors follow the smoothed signs; raw values and the background remain unchanged.
+
+Color limits normally use the 99th percentile of absolute, unsmoothed pixel attributions, symmetrically around zero; colors saturate beyond these limits. The −1 / 0 / +1 legend is a relative display scale, not raw units; intensities cannot be compared across images. Overlay opacity increases linearly with the absolute normalized, clipped value from 0 to 0.5; zero is transparent.
+
+Checks assess numerical consistency and stability on the model’s native patch grid, not pixel-level stability.
+
+</details>
+
+### AI-assisted interpretation
+
+In **Settings**, enable **AI-assisted interpretation**, enter the **API URL**, **Model** and **API key**, and select **Save changes**. Saved settings apply to new analyses.
+
+The service only rephrases the positive or negative prediction sentence; the numerical sentence stays fixed. Remote services require internet access and receive only the modality, RVL Score and probability—not images or patient information. Without LLM access, the report uses a local template.
 
 ## Troubleshooting
 
 | Problem | What to do |
 |---|---|
-| macOS cannot verify `start.command` | If you downloaded JingWei from this repository, open **System Settings → Privacy & Security** after the blocked launch. Under **Security**, select **Open Anyway** for `start.command`, then confirm **Open**. You can then double-click the launcher as usual. See [Apple’s instructions](https://support.apple.com/en-us/102445). |
+| macOS cannot verify `start.command` | If you downloaded JingWei from this repository, open **System Settings → Privacy & Security** after the blocked launch. Under **Security**, select **Open Anyway** for `start.command`, then confirm **Open**. Double-click the launcher again. See [Apple’s instructions](https://support.apple.com/en-us/102445). |
 | Installation stops during a download | Check your internet connection and run the launcher again. |
 | Weights are not found | Check the file path for the selected modality in Settings and select **Save changes**. The other modality is optional. |
-| The browser does not open | Keep the terminal running and open the address printed there, usually **http://127.0.0.1:8765/**. Open the app through this address rather than `index.html`. |
-| The app is already running | Use the existing browser page. To restart it, stop the previous terminal with **Ctrl+C**, then run the launcher again. |
+| The browser does not open | Keep the terminal running and open its displayed address, usually **http://127.0.0.1:8765/**, rather than opening `index.html`. |
+| The app is already running | Use the existing browser page. To restart, press **Ctrl+C** in the previous terminal, then run the launcher again. |
 
 For other problems, [open an issue](https://github.com/laleoarrow/jingwei-uveitis/issues) with your operating system and the error shown in the terminal.
 
