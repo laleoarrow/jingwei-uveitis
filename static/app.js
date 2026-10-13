@@ -73,11 +73,12 @@ function renderHealth() {
   $('connectionText').textContent = health ? 'Online' : 'Offline';
   $('connectionDot').classList.toggle('bad', !health);
   $('serviceState').textContent = health ? 'Online' : state.healthCheckedAt ? 'Offline' : 'Checking…';
-  $('serviceState').classList.toggle('status-unavailable', !health);
+  $('serviceState').className = health ? 'status-ready' : state.healthCheckedAt ? 'status-error' : 'status-unknown';
   const environment = health?.environment;
   $('environmentState').textContent = environment?.status === 'available' ? 'Dependencies found'
     : environment?.status === 'missing' ? `Missing: ${environment.missing.join(', ')}` : 'Unavailable';
-  $('environmentState').classList.toggle('status-unavailable', environment?.status !== 'available');
+  $('environmentState').className = environment?.status === 'available' ? 'status-ready'
+    : environment?.status === 'missing' ? 'status-error' : 'status-unknown';
   const activity = health?.activity;
   const modality = activity?.modality?.toUpperCase() || '';
   const phase = { analyzing: `Analyzing ${modality}`, heatmap: `Generating ${modality} heatmap`,
@@ -85,6 +86,8 @@ function renderHealth() {
   $('activityState').textContent = !health ? 'Unavailable' : phase
     ? `${phase} · ${Math.floor(activity.elapsed_seconds)} s`
     : activity?.phase === 'idle' ? health.status === 'ok' ? 'Ready' : 'Needs setup' : 'Unavailable';
+  $('activityState').className = !health ? 'status-unknown' : phase ? 'status-busy'
+    : activity?.phase === 'idle' ? health.status === 'ok' ? 'status-ready' : 'status-setup' : 'status-unknown';
   $('healthCheckedAt').textContent = state.healthCheckedAt ? `Last checked ${state.healthCheckedAt.toLocaleTimeString()}` : 'Checking service…';
   for (const modality of ['cfp', 'oct']) {
     const model = health?.models?.[modality];
