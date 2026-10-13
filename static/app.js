@@ -75,8 +75,9 @@ function renderHealth() {
   $('serviceState').textContent = health ? 'Online' : state.healthCheckedAt ? 'Offline' : 'Checking…';
   $('serviceState').className = health ? 'status-ready' : state.healthCheckedAt ? 'status-error' : 'status-unknown';
   const environment = health?.environment;
-  $('environmentState').textContent = environment?.status === 'available' ? 'Dependencies found'
+  $('environmentState').textContent = environment?.status === 'available' ? 'Ready'
     : environment?.status === 'missing' ? `Missing: ${environment.missing.join(', ')}` : 'Unavailable';
+  $('environmentState').title = environment?.status === 'available' ? 'Required packages are present; model compatibility is checked on load.' : '';
   $('environmentState').className = environment?.status === 'available' ? 'status-ready'
     : environment?.status === 'missing' ? 'status-error' : 'status-unknown';
   const activity = health?.activity;
@@ -85,7 +86,7 @@ function renderHealth() {
     refining: `Refining ${modality} heatmap` }[activity?.phase];
   $('activityState').textContent = !health ? 'Unavailable' : phase
     ? `${phase} · ${Math.floor(activity.elapsed_seconds)} s`
-    : activity?.phase === 'idle' ? health.status === 'ok' ? 'Ready' : 'Needs setup' : 'Unavailable';
+    : activity?.phase === 'idle' ? health.status === 'ok' ? 'Idle' : 'Needs setup' : 'Unavailable';
   $('activityState').className = !health ? 'status-unknown' : phase ? 'status-busy'
     : activity?.phase === 'idle' ? health.status === 'ok' ? 'status-ready' : 'status-setup' : 'status-unknown';
   $('healthCheckedAt').textContent = state.healthCheckedAt ? `Last checked ${state.healthCheckedAt.toLocaleTimeString()}` : 'Checking service…';

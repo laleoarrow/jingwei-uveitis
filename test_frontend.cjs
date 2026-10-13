@@ -120,8 +120,8 @@ test('health displays dependency, model and live activity states without claimin
   app.state.health = healthy();
   app.renderHealth();
   assert.equal(app.element('serviceState').textContent, 'Online');
-  assert.equal(app.element('environmentState').textContent, 'Dependencies found');
-  assert.equal(app.element('activityState').textContent, 'Ready');
+  assert.equal(app.element('environmentState').textContent, 'Ready');
+  assert.equal(app.element('activityState').textContent, 'Idle');
   assert.equal(app.element('cfpWeightState').textContent, 'Weights found');
   assert.equal(app.element('octWeightState').textContent, 'Model loaded');
   for (const [phase, expected] of [['analyzing', 'Analyzing OCT'], ['heatmap', 'Generating OCT heatmap'], ['refining', 'Refining OCT heatmap']]) {
@@ -173,7 +173,7 @@ test('health polling is bounded, does not overlap, clears offline state and reco
   requestsFor(app, '/api/health')[2].respond(healthy());
   await recovering;
   assert.equal(app.element('serviceState').textContent, 'Online');
-  assert.equal(app.element('activityState').textContent, 'Ready');
+  assert.equal(app.element('activityState').textContent, 'Idle');
   assert.equal(app.element('serviceNotice').textContent, '');
 });
 
