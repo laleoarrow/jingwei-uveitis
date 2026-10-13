@@ -81,6 +81,7 @@ class PredictRequest(BaseModel):
     modality: Literal["cfp", "oct"]
     image_base64: str = Field(min_length=1)
     filename: str = Field(default="image", max_length=512)
+    include_heatmap: bool | None = Field(default=None, strict=True)
 
 
 class SettingsStore:
@@ -323,7 +324,8 @@ def predict(request: PredictRequest):
                 )
             return engine.predict(request.modality, request.image_base64,
                                   path, settings.device,
-                                  include_heatmap=settings.include_heatmap)
+                                  include_heatmap=(settings.include_heatmap if request.include_heatmap is None
+                                                   else request.include_heatmap))
     except InferenceError:
         raise
     except Exception as exc:

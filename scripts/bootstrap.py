@@ -58,7 +58,7 @@ def install(uv):
     PENDING.touch()
     backend = [] if sys.platform == 'darwin' else ['--torch-backend', 'cpu']
     run(uv, 'pip', 'install', '--python', PYTHON, *backend, *retry, '-r', REQUIREMENTS)
-    run(PYTHON, '-c', 'import torch, torchvision, timm, fastapi, uvicorn, numpy, scipy, PIL, httpx')
+    run(PYTHON, '-c', 'import torch, torchvision, timm, fastapi, uvicorn, numpy, scipy, PIL, httpx, captum, cv2, matplotlib')
     PENDING.unlink()
     try:
         run(PYTHON, __file__, '--check')

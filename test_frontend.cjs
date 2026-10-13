@@ -188,11 +188,106 @@ test('pending report status is hidden only in print; settled AI attribution stay
   assert.equal(app.element('printReport').disabled, false);
 });
 
+test('signed pixel IG report labels both directions with a relative scale and unchanged original image', () => {
+  const app = browser();
+  app.state.originalPreview = 'data:image/png;base64,UPLOAD';
+  app.state.result = {
+    ...result(), image: { input_preview: 'data:image/png;base64,MODEL_INPUT' },
+    attribution: {
+      method: 'integrated_gradients', target: 'rvl_positive_margin', display: 'signed',
+      baseline: 'blur', status: 'ready', empty: false,
+      heatmap: 'data:image/png;base64,HEATMAP', overlay: 'data:image/png;base64,OVERLAY',
+      input_preview: 'data:image/png;base64,BLURRED_REFERENCE',
+    },
+  };
+  app.renderReport();
+  const report = app.element('reportPage').innerHTML;
+  assert.match(report, /<h2 class="report-section-title">Contributing regions<\/h2>/);
+  assert.match(report, /src="data:image\/png;base64,MODEL_INPUT" alt="Original of the analyzed field"/);
+  assert.doesNotMatch(report, /base64,UPLOAD|base64,BLURRED_REFERENCE/);
+  assert.match(report, /src="data:image\/png;base64,HEATMAP" alt="Heatmap of the analyzed field"/);
+  assert.match(report, /src="data:image\/png;base64,OVERLAY" alt="Overlay of the analyzed field"/);
+  assert.match(report, /<span>−1<\/span><span class="report-heatmap-scale" aria-hidden="true">0<\/span><span>\+1<\/span>/);
+  assert.match(report, /Red increases and blue decreases the RVL Score relative to a blurred reference/);
+  assert.match(report, /Zero is transparent in the overlay/);
+  assert.match(report, /Relative display scale, not raw attribution units/);
+  assert.match(report, /model attribution, not lesion location/);
+  assert.doesNotMatch(report, /Only positive contributions|<span>Low<\/span>|<span>High<\/span>/);
+  assert.match(styles, /linear-gradient\(to right, #0000ff 0%, #ffffff 50%, #ff0000 100%\)/);
+});
+
+test('negative-only IG remains visible for an RVL-negative result', () => {
+  const app = browser();
+  app.state.result = {
+    ...result(), score: -1, probability: .3, positive: false,
+    attribution: {
+      status: 'ready', empty: false, method: 'integrated_gradients', display: 'signed',
+      pixel_map: [[-2, -1], [-3, -4]],
+      heatmap: 'data:image/png;base64,NEGATIVE', overlay: 'data:image/png;base64,NEGATIVE_OVERLAY',
+    },
+  };
+  app.renderReport();
+  const report = app.element('reportPage').innerHTML;
+  assert.match(report, /src="data:image\/png;base64,NEGATIVE"/);
+  assert.match(report, /src="data:image\/png;base64,NEGATIVE_OVERLAY"/);
+  assert.match(report, /report-heatmap-key/);
+  assert.doesNotMatch(report, /No attribution|No positive|Heatmap unavailable|Overlay unavailable/);
+});
+
+test('zero IG is described without implying that only positive values are considered', () => {
+  const app = browser();
+  app.state.result = {
+    ...result(), attribution: { status: 'ready', empty: true, method: 'integrated_gradients', display: 'signed' },
+  };
+  app.renderReport();
+  const report = app.element('reportPage').innerHTML;
+  assert.match(report, /No attribution relative to the blurred reference\./);
+  assert.doesNotMatch(report, /report-heatmap-key|No positive|positive IG attribution/);
+});
+
+for (const status of ['disabled', 'unavailable']) {
+  test(`${status} IG output does not display stale maps or a color scale`, () => {
+    const app = browser();
+    app.state.result = {
+      ...result(), image: { input_preview: 'data:image/png;base64,ORIGINAL' },
+      attribution: { status, heatmap: 'data:image/png;base64,STALE', overlay: 'data:image/png;base64,STALE' },
+    };
+    app.renderReport();
+    const report = app.element('reportPage').innerHTML;
+    assert.match(report, /src="data:image\/png;base64,ORIGINAL"/);
+    assert.doesNotMatch(report, /base64,STALE|report-heatmap-key/);
+    if (status === 'unavailable') assert.match(report, /Heatmap unavailable/);
+    else assert.doesNotMatch(report, /Contributing regions|<figcaption>Heatmap|<figcaption>Overlay/);
+  });
+}
+
+for (const enabled of [true, false]) {
+  test(`upload uses the heatmap checkbox (${enabled}) at analysis start without saving settings`, async () => {
+    const app = browser();
+    app.state.settings = { include_heatmap: !enabled };
+    app.element('includeHeatmap').checked = enabled;
+    const analyzing = analyze(app);
+    app.element('includeHeatmap').checked = !enabled;
+    await tick();
+    const request = requestsFor(app, '/api/predict')[0];
+    assert.equal(JSON.parse(request.options.body).include_heatmap, enabled);
+    assert.equal(app.element('predictionPhase').textContent,
+      enabled ? 'Analyzing image with heatmap…' : 'Analyzing image…');
+    assert.equal(requestsFor(app, '/api/settings').length, 0);
+    assert.equal(app.state.settings.include_heatmap, !enabled);
+    request.respond(result());
+    await analyzing;
+  });
+}
+
 for (const modality of ['cfp', 'oct']) {
   test(`${modality.toUpperCase()} sample uses normal inference and retains its generated-image label`, async () => {
     const app = browser();
     app.state.modality = modality;
+    app.state.settings = { include_heatmap: false };
+    app.element('includeHeatmap').checked = true;
     const loading = app.useSample();
+    app.element('includeHeatmap').checked = false;
     assert.equal(app.element('useSample').disabled, true);
     assert.equal(app.images[0].src, `assets/sample-${modality}-generated.png`);
     app.images[0].finishDecode();
@@ -207,6 +302,8 @@ for (const modality of ['cfp', 'oct']) {
     const prediction = requestsFor(app, '/api/predict')[0];
     const body = JSON.parse(prediction.options.body);
     assert.equal(body.modality, modality);
+    assert.equal(body.include_heatmap, true);
+    assert.equal(requestsFor(app, '/api/settings').length, 0);
     assert.equal(body.filename, `AI-generated-${modality.toUpperCase()}-sample.png`);
     prediction.respond({ ...result(), modality });
     await tick();
@@ -222,6 +319,7 @@ for (const modality of ['cfp', 'oct']) {
     await tick();
     const uploaded = analyze(app);
     await tick();
+    assert.equal(JSON.parse(requestsFor(app, '/api/predict')[1].options.body).include_heatmap, false);
     requestsFor(app, '/api/predict')[1].respond({ ...result(), modality });
     await uploaded;
     assert.equal(app.state.result.snapshot.aiGeneratedSample, false);

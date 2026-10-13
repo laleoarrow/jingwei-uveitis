@@ -63,8 +63,14 @@ Supported images: JPEG, PNG, single-page TIFF and WebP, up to 20 MiB each.
 
 Optional settings apply to the next assessment:
 
-- **Include heatmap** adds contributing-region maps to the report and takes longer to compute.
+- **Include heatmap** applies immediately to the next sample or upload; **Save changes** remembers the preference across reloads. It adds signed pixel-level Integrated Gradients maps and overlays to the report and takes longer to compute. Red increases and blue decreases the RVL Score relative to a blurred reference; zero is transparent in the overlay. These maps explain model attribution, not lesion location. If the attribution fails its convergence check, the report marks the heatmap unavailable. The online demo does not calculate heatmaps.
 - **Use LLM** adds interpretation through your configured service. Enter its **API URL**, **Model** and **API key** in Settings. A remote service requires internet access and receives only the modality, score and probability—not images or examination details. Without LLM access, the report uses threshold-based interpretation.
+
+### IG display
+
+IG explains the fixed logit margin `logits[1] - logits[0]` against a blurred reference. The displayed pixel map sums signed RGB-channel attributions, retaining both signs. For display only, the attribution map receives Gaussian smoothing with σ=1 pixel. Its symmetric red–blue scale uses the 99th percentile of the absolute **raw**, unsmoothed pixel map; values outside that range saturate. The −1 / 0 / +1 legend is a relative display scale, not raw IG units, and intensities are not comparable between images.
+
+Overlay opacity increases linearly with the absolute normalized display value, from zero at zero attribution to a maximum of 0.5. Both the original panel and overlay base use the unchanged model-input image; smoothing applies only to the attribution map. Raw signed values remain available in the attribution data. Reported map-stability diagnostics refer to the native patch grid, not pixel-level stability; convergence does not establish precise lesion localization.
 
 ## Troubleshooting
 
