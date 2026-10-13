@@ -8,7 +8,7 @@ import shutil
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "static"
 DOCS = ROOT / "docs"
-VERSION = "workbench-demo-18"
+VERSION = "workbench-demo-20"
 DOWNLOAD_URL = "https://github.com/laleoarrow/jingwei-uveitis/archive/refs/heads/main.zip"
 WEIGHTS_URL = "https://pan.baidu.com/s/1r7gfecgxxbtCQnV0FmZlSg?pwd=7a7c"
 INSTALL_URL = "https://github.com/laleoarrow/jingwei-uveitis#installation"
@@ -112,6 +112,7 @@ app = replace_section(app, 'function presetInterpretation(', 'function cancelInt
 
 ''')
 for line in [
+    "  startHealthPolling();\n",
     "  $('settingsForm').addEventListener('submit', saveSettings);\n",
     "  $('device').addEventListener('change', renderDeviceStatus);\n",
     "  $('llmEnabled').addEventListener('change', renderLlmSettings);\n",
@@ -122,6 +123,8 @@ for line in [
     if "clearLlmKey" in line and line not in app:
         line = line.replace("renderLlmSettings();", "state.clearLlmApiKey = true; renderLlmSettings();")
     app = replace_once(app, line, '')
+app = replace_once(app, "  const includeHeatmap = $('includeHeatmap').checked;", "  const includeHeatmap = false; // Heatmaps require the offline application.")
+app = replace_once(app, "async function analyzeFile(file, includeHeatmap = $('includeHeatmap').checked)", "async function analyzeFile(file, includeHeatmap = false)")
 app = replace_once(app, "  const isTiff = ['tif', 'tiff'].includes(extension) || file.type?.toLowerCase() === 'image/tiff';", "  const isTiff = false; // TIFF decoding requires the offline application.")
 app = app.replace('Choose a JPG, PNG, TIFF or WEBP image.', 'Choose a JPG, PNG or WebP image.')
 app = app.replace("'Analyzing image…'", "'Preparing demo…'")
@@ -129,12 +132,13 @@ app = app.replace('Analysis time · ${', 'Demo time · ${')
 app = replace_once(app, "  return result.positive ? 'Predicted RVL: positive' : 'Predicted RVL: negative';", "  return 'Illustrative result — not calculated from your image';")
 app = app.replace('src="/jingwei-wordmark.svg', 'src="jingwei-wordmark.svg')
 app = app.replace('>Model input</button>', '>Preview crop</button>')
+app = app.replace("imagePanel(snapshot.aiGeneratedSample ? 'AI-generated sample' : 'Model input'", "imagePanel(snapshot.aiGeneratedSample ? 'AI-generated sample' : 'Preview crop'")
 app = app.replace('>Clinical report</span>', '>DEMO / illustrative output</span>')
-app = app.replace('>Assisted assessment report</p>', '>Illustrative result — not calculated from your image</p>')
+app = replace_once(app, '>Model-based RVL prediction in uveitis</p>', '>Illustrative result — not calculated from your image</p>')
 app = app.replace('<span>Analyzed: ', '<span>Demo created: ')
 app = app.replace(' of the analyzed field', ' preview; not analyzed')
 app = app.replace('This image</span>', 'Demo result</span>')
-app = app.replace('FFA reference · ${e(referenceTitle)}', 'FFA reference · ${e(referenceTitle)} · illustrative marker')
+app = replace_once(app, 'Reference cohort · ${e(referenceTitle)} (RVL assessed by FFA)', 'Reference cohort · ${e(referenceTitle)} (RVL assessed by FFA) · illustrative marker')
 app = replace_section(app, '    // Licensed local faces are optional', '    if (state.result !== result', '    await document.fonts.ready;\n')
 app = replace_once(app, '\ninitialize();', '\nconst jingweiInstallPrompt = ' + json.dumps(install_prompt.group(1), ensure_ascii=True) + ';\n' + '''
 document.querySelectorAll('[data-copy-install]').forEach((button) => {

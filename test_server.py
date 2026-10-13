@@ -4,6 +4,7 @@ import base64
 import io
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -80,6 +81,51 @@ class ImageTests(unittest.TestCase):
                 self.assertEqual(result["positive"], margin >= 0)
                 self.assertEqual(result["probability"] >= .5, margin >= 0)
 
+    def test_activity_tracks_prediction_heatmap_and_refinement_then_returns_to_idle(self):
+        import torch
+
+        engine = InferenceEngine()
+        idle = {"phase": "idle", "modality": None, "elapsed_seconds": 0}
+        self.assertEqual(engine.activity(), idle)
+        with tempfile.TemporaryDirectory() as folder:
+            checkpoint = Path(folder) / "test.pth"
+            checkpoint.write_bytes(b"test")
+            loaded = {"model": lambda _x: torch.tensor([[0., 1.]]), "path": checkpoint,
+                      "fingerprint": _fingerprint(checkpoint), "signature": "test", "device": "cpu"}
+
+            def load(*_args):
+                self.assertEqual(engine.activity()["phase"], "analyzing")
+                self.assertEqual(engine.activity()["modality"], "cfp")
+                self.assertGreaterEqual(engine.activity()["elapsed_seconds"], 0)
+                return loaded
+
+            def explain(*_args, on_phase):
+                self.assertEqual(engine.activity()["phase"], "heatmap")
+                on_phase("refining")
+                self.assertEqual(engine.activity()["phase"], "refining")
+                return {"status": "unavailable"}
+
+            with patch.object(engine, "_load", side_effect=load), patch("inference.build_attribution", side_effect=explain):
+                engine.predict("cfp", image_payload(), str(checkpoint), "cpu", include_heatmap=True)
+            self.assertEqual(engine.activity(), idle)
+
+    def test_activity_resets_after_prediction_or_heatmap_failure(self):
+        import torch
+
+        engine = InferenceEngine()
+        with tempfile.TemporaryDirectory() as folder:
+            checkpoint = Path(folder) / "test.pth"
+            checkpoint.write_bytes(b"test")
+            loaded = {"model": lambda _x: torch.tensor([[0., 1.]]), "path": checkpoint,
+                      "fingerprint": _fingerprint(checkpoint), "signature": "test", "device": "cpu"}
+            for stage in ("load", "heatmap"):
+                with self.subTest(stage=stage), patch.object(engine, "_load", return_value=loaded,
+                        side_effect=RuntimeError("test failure") if stage == "load" else None), patch(
+                        "inference.build_attribution", side_effect=RuntimeError("test failure")):
+                    with self.assertRaisesRegex(RuntimeError, "test failure"):
+                        engine.predict("cfp", image_payload(), str(checkpoint), "cpu", include_heatmap=True)
+                self.assertEqual(engine.activity(), {"phase": "idle", "modality": None, "elapsed_seconds": 0})
+
 
 class CheckpointPathTests(unittest.TestCase):
     def test_quoted_custom_paths_and_project_relative_paths(self):
@@ -134,6 +180,54 @@ class ServerTests(unittest.TestCase):
                 self.assertEqual(response.status_code, 200)
                 self.assertEqual(response.json()["device"], "cpu")
                 self.assertEqual(response.json()["available_devices"], ["cpu"])
+
+    def test_health_does_not_wait_for_inference_lock_or_expose_settings(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store = server.SettingsStore(Path(folder) / "settings.json")
+            store.value = store.value.model_copy(update={"device": "cpu", "llm_api_key": "PRIVATE_KEY"})
+            engine = InferenceEngine()
+            checkpoint = Path(store.value.cfp_weight_path)
+            engine._cache = {"modality": "cfp", "path": checkpoint, "device": "cpu",
+                             "fingerprint": _fingerprint(checkpoint)}
+            with patch.object(server, "settings_store", store), patch.object(server, "engine", engine), patch.object(engine, "_load") as load:
+                with ThreadPoolExecutor(max_workers=1) as executor:
+                    with engine.lock, engine._track_activity("cfp"):
+                        engine._set_phase("heatmap")
+                        response = executor.submit(self.client.get, "/api/health").result(timeout=1)
+                self.assertEqual(response.status_code, 200, response.text)
+                body = response.json()
+                self.assertTrue(body["models"]["cfp"]["loaded"])
+                self.assertFalse(body["models"]["oct"]["loaded"])
+                self.assertEqual(body["activity"]["phase"], "heatmap")
+                self.assertEqual(body["activity"]["modality"], "cfp")
+                self.assertGreaterEqual(body["activity"]["elapsed_seconds"], 0)
+                self.assertEqual(set(body["models"]["cfp"]), {"exists", "loaded", "name"})
+                self.assertNotIn("PRIVATE_KEY", response.text)
+                self.assertNotIn(str(checkpoint), response.text)
+                load.assert_not_called()
+                checkpoint.write_bytes(b"changed checkpoint")
+                self.assertFalse(self.client.get("/api/health").json()["models"]["cfp"]["loaded"])
+
+    def test_health_accepts_one_modality_and_degrades_for_missing_dependencies(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store = server.SettingsStore(Path(folder) / "settings.json")
+            store.value = store.value.model_copy(update={"oct_weight_path": "", "device": "cpu"})
+            with patch.object(server, "settings_store", store), patch.object(server, "environment_status",
+                    return_value={"status": "available", "missing": []}) as environment:
+                self.assertEqual(self.client.get("/api/health").json()["status"], "ok")
+                environment.return_value = {"status": "missing", "missing": ["captum"]}
+                body = self.client.get("/api/health").json()
+                self.assertEqual(body["status"], "degraded")
+                self.assertEqual(body["environment"], {"status": "missing", "missing": ["captum"]})
+
+    def test_environment_reports_module_availability_once_without_importing_packages(self):
+        server.environment_status.cache_clear()
+        self.addCleanup(server.environment_status.cache_clear)
+        with patch.object(server.importlib.util, "find_spec", side_effect=lambda name: None if name in {"captum", "cv2"} else object()) as find:
+            expected = {"status": "missing", "missing": ["captum", "opencv-python-headless"]}
+            self.assertEqual(server.environment_status(), expected)
+            self.assertEqual(server.environment_status(), expected)
+            self.assertEqual(find.call_count, 6)
 
     def test_rejects_foreign_origin_and_host(self):
         for headers in ({"Origin": "https://example.com"}, {"Host": "foreign.test:8765"},

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import logging
 import math
 import os
+from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
@@ -19,14 +21,14 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 try:
     from . import interpretation, reference
     from .inference import (DEFAULT_PATHS, MAX_IMAGE_BYTES, MODEL_NAMES, ROOT,
-                            InferenceEngine, InferenceError, available_devices, decode_image,
+                            InferenceEngine, InferenceError, available_devices, cached_model_matches, decode_image,
                             normalize_checkpoint_path, png_preview, resolve_device,
                             validate_checkpoint_path)
 except ImportError:
     import interpretation
     import reference
     from inference import (DEFAULT_PATHS, MAX_IMAGE_BYTES, MODEL_NAMES, ROOT,
-                           InferenceEngine, InferenceError, available_devices, decode_image,
+                           InferenceEngine, InferenceError, available_devices, cached_model_matches, decode_image,
                            normalize_checkpoint_path, png_preview, resolve_device,
                            validate_checkpoint_path)
 
@@ -275,24 +277,35 @@ def put_settings(settings: SettingsUpdate):
         return resolved.public()
 
 
+@lru_cache(maxsize=1)
+def environment_status() -> dict:
+    dependencies = (("torch", "torch"), ("torchvision", "torchvision"), ("timm", "timm"),
+                    ("captum", "captum"), ("cv2", "opencv-python-headless"), ("PIL", "Pillow"))
+    missing = [package for module, package in dependencies if importlib.util.find_spec(module) is None]
+    return {"status": "missing" if missing else "available", "missing": missing}
+
+
 @app.get("/api/health")
 def health():
-    with engine.lock:
-        settings = settings_store.value
-        try:
-            device = resolve_device(settings.device)
-        except InferenceError:
-            device = "unavailable"
-        models = {}
-        for modality in ("cfp", "oct"):
-            path = normalize_checkpoint_path(getattr(settings, modality + "_weight_path"))
-            models[modality] = {"exists": bool(path) and Path(path).is_file(),
-                                "loaded": engine.loaded(modality, path, device),
-                                "name": MODEL_NAMES[modality]}
-        available = reference.SOURCE.is_file()
-        ready = all(item["exists"] for item in models.values()) and available and device != "unavailable"
-        return {"status": "ok" if ready else "degraded", "models": models,
-                "device": device, "available_devices": available_devices(), "reference_available": available}
+    # Settings and cache are replaced as whole objects; polling never waits for inference.
+    settings, cache = settings_store.value, engine._cache
+    try:
+        device = resolve_device(settings.device)
+    except InferenceError:
+        device = "unavailable"
+    models = {}
+    for modality in ("cfp", "oct"):
+        path = normalize_checkpoint_path(getattr(settings, modality + "_weight_path"))
+        models[modality] = {"exists": bool(path) and Path(path).is_file(),
+                            "loaded": cached_model_matches(cache, modality, path, device),
+                            "name": MODEL_NAMES[modality]}
+    available = reference.SOURCE.is_file()
+    environment = environment_status()
+    ready = (any(item["exists"] for item in models.values()) and available
+             and device != "unavailable" and environment["status"] == "available")
+    return {"status": "ok" if ready else "degraded", "models": models,
+            "device": device, "available_devices": available_devices(), "reference_available": available,
+            "activity": engine.activity(), "environment": environment}
 
 
 @app.get("/api/reference")
@@ -338,9 +351,10 @@ def predict(request: PredictRequest):
 
 @app.post("/api/interpret")
 async def interpret(request: InterpretRequest):
-    with engine.lock:
-        settings = {name: getattr(settings_store.value, name) for name in
-                    ("llm_enabled", "llm_base_url", "llm_model", "llm_api_key")}
+    # Settings saves replace the whole object; snapshot without blocking the event loop on inference.
+    snapshot = settings_store.value
+    settings = {name: getattr(snapshot, name) for name in
+                ("llm_enabled", "llm_base_url", "llm_model", "llm_api_key")}
     return await interpretation.interpret_result(request.model_dump(), settings)
 
 

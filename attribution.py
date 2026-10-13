@@ -59,7 +59,7 @@ def render_maps(raw_pixel: np.ndarray, crop: Image.Image) -> tuple[str, str, boo
 
 
 def build_attribution(model, tensor: torch.Tensor, crop: Image.Image, modality: str,
-                      device: str, expected_logits: torch.Tensor) -> dict:
+                      device: str, expected_logits: torch.Tensor, *, on_phase=None) -> dict:
     metadata = {"method": METHODS[modality], "target": TARGET, "display": "signed",
                 "baseline": "blur", "device": str(device), "convergence_scope": "native_patch",
                 "pixel_stability_checked": False}
@@ -80,6 +80,8 @@ def build_attribution(model, tensor: torch.Tensor, crop: Image.Image, modality: 
                 explained_model, gradient_input, "margin", **options)
             metadata["integration"] = "gausslegendre"
             if not bool(diagnostics["converged"][0]):
+                if on_phase is not None:
+                    on_phase("refining")
                 _, _, maps, diagnostics = core.adaptive_margin_integrated_gradients(
                     explained_model, gradient_input,
                     **{key: options[key] for key in ("ig_batch_size", "ig_baseline", "ig_blur_sigma",

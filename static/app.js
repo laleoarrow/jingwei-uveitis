@@ -10,11 +10,12 @@ const DEFAULTS = {
 };
 const state = {
   modality: 'cfp', settings: null, health: null, result: null, reference: null,
-  referenceError: '', referencePending: false, predictionPending: false,
+  referenceError: '', referencePending: false, predictionPending: false, samplePending: false,
   predictionSequence: 0, referenceSequence: 0, predictionController: null,
   predictionTimer: null, predictionStartedAt: null,
   previewUrl: null, originalPreview: null, previewMode: 'original', view: 'workspace',
   settingsRevision: 0, settingsPending: false, clearLlmApiKey: false,
+  healthPending: false, healthCheckedAt: null, healthTimer: null,
   interpretationSequence: 0, interpretationController: null, interpretationPending: false,
   interpretationResult: null, reportPrintPrepared: false,
 };
@@ -29,7 +30,12 @@ const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({ 
 const localDate = (date = new Date()) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 
 async function api(path, options = {}) {
-  const response = await fetch(path, options);
+  let response;
+  try { response = await fetch(path, options); }
+  catch (error) {
+    if (error.name === 'TypeError') throw new Error('Service connection lost. Reconnect to JingWei and try again.');
+    throw error;
+  }
   let data;
   try { data = await response.json(); } catch { throw new Error(`Unexpected server response (${response.status}).`); }
   if (!response.ok) {
@@ -58,22 +64,37 @@ function setView(view) {
   for (const name of ['workspace', 'settings', 'report']) $(`${name}View`).classList.toggle('hidden', name !== view);
   document.querySelectorAll('[data-view]').forEach((button) => button.classList.toggle('active', button.dataset.view === view || view === 'report' && button.dataset.view === 'workspace'));
   if (view === 'report') renderReport();
+  if (view === 'settings') refreshHealth();
   window.scrollTo({ top: 0, behavior: 'instant' });
 }
 
 function renderHealth() {
   const health = state.health;
-  $('connectionText').textContent = health ? 'Connected' : 'Disconnected';
+  $('connectionText').textContent = health ? 'Online' : 'Offline';
   $('connectionDot').classList.toggle('bad', !health);
+  $('serviceState').textContent = health ? 'Online' : state.healthCheckedAt ? 'Offline' : 'Checking…';
+  $('serviceState').classList.toggle('status-unavailable', !health);
+  const environment = health?.environment;
+  $('environmentState').textContent = environment?.status === 'available' ? 'Dependencies found'
+    : environment?.status === 'missing' ? `Missing: ${environment.missing.join(', ')}` : 'Unavailable';
+  $('environmentState').classList.toggle('status-unavailable', environment?.status !== 'available');
+  const activity = health?.activity;
+  const modality = activity?.modality?.toUpperCase() || '';
+  const phase = { analyzing: `Analyzing ${modality}`, heatmap: `Generating ${modality} heatmap`,
+    refining: `Refining ${modality} heatmap` }[activity?.phase];
+  $('activityState').textContent = !health ? 'Unavailable' : phase
+    ? `${phase} · ${Math.floor(activity.elapsed_seconds)} s`
+    : activity?.phase === 'idle' ? health.status === 'ok' ? 'Ready' : 'Needs setup' : 'Unavailable';
+  $('healthCheckedAt').textContent = state.healthCheckedAt ? `Last checked ${state.healthCheckedAt.toLocaleTimeString()}` : 'Checking service…';
   for (const modality of ['cfp', 'oct']) {
     const model = health?.models?.[modality];
     const label = $(`${modality}WeightState`);
     const unconfigured = state.settings?.[`${modality}_weight_path`] === '';
-    label.textContent = model ? model.exists ? 'Model ready' : unconfigured ? 'Not configured' : 'Weights not found' : 'Disconnected';
+    label.textContent = model ? model.loaded ? 'Model loaded' : model.exists ? 'Weights found' : unconfigured ? 'Not configured' : 'Weights not found' : 'Unavailable';
     label.className = `weight-state ${model?.exists ? 'present' : unconfigured ? '' : 'missing'}`;
   }
   const model = health?.models?.[state.modality];
-  $('activeModelStatus').textContent = model ? model.exists ? 'Model ready' : 'Weights not found' : 'Disconnected';
+  $('activeModelStatus').textContent = model ? model.loaded ? 'Model loaded' : model.exists ? 'Weights found' : 'Weights not found' : 'Unavailable';
   $('modelDot').className = `status-dot ${model?.exists ? '' : 'bad'}`;
   renderDeviceStatus();
   if (health?.reference_available === false) setNotice('serviceNotice', 'Reference distribution unavailable.');
@@ -97,15 +118,26 @@ function renderDeviceStatus() {
 }
 
 async function refreshHealth() {
+  if (state.healthPending) return;
+  state.healthPending = true;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 4000);
   try {
-    state.health = await api('/api/health');
-    renderHealth();
+    state.health = await api('/api/health', { signal: controller.signal });
     if (state.health.reference_available !== false) setNotice('serviceNotice', '');
   } catch (error) {
     state.health = null;
+    setNotice('serviceNotice', 'Service connection lost. Reconnect to JingWei and try again.', true);
+  } finally {
+    clearTimeout(timeout);
+    state.healthPending = false;
+    state.healthCheckedAt = new Date();
     renderHealth();
-    setNotice('serviceNotice', 'JingWei service unavailable. Start the application and retry.', true);
   }
+}
+
+function startHealthPolling() {
+  if (state.healthTimer === null) state.healthTimer = setInterval(refreshHealth, 5000);
 }
 
 function populateSettings() {
@@ -146,7 +178,7 @@ async function saveSettings(event) {
     state.settings = await api('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(settings) });
     state.settingsRevision += 1;
     populateSettings();
-    setNotice('settingsMessage', 'Saved for the next analysis.');
+    setNotice('settingsMessage', 'Settings saved.');
     await refreshHealth();
   } catch (error) {
     setNotice('settingsMessage', error.message || 'Could not save. Please retry.', true);
@@ -174,7 +206,7 @@ function presetInterpretation(result) {
   const positive = result.probability >= .5;
   const displayed = number(percentage, 1);
   const approximate = [0, 50, 100].includes(Number(displayed)) && Number(displayed) !== percentage;
-  const text = `Predicted RVL probability is ${approximate ? 'approximately ' : ''}${displayed}%, ${percentage === 50 ? 'at' : positive ? 'above' : 'below'} the 50% classification threshold. The model favors an RVL-${positive ? 'positive' : 'negative'} result.`;
+  const text = `Predicted RVL probability is ${approximate ? 'approximately ' : ''}${displayed}%, ${percentage === 50 ? 'exactly at' : positive ? 'above' : 'below'} the 50% classification threshold. The model prediction is RVL-${positive ? 'positive' : 'negative'}.`;
   return { text, source: 'template', fallback: true };
 }
 
@@ -318,10 +350,12 @@ function showPreview(mode) {
 }
 
 async function useSample() {
+  const button = $('useSample');
+  if (state.samplePending || state.predictionPending) return;
   const sequence = state.predictionSequence;
   const modality = state.modality;
   const includeHeatmap = $('includeHeatmap').checked;
-  const button = $('useSample');
+  state.samplePending = true;
   button.disabled = true;
   try {
     const image = new Image();
@@ -335,10 +369,13 @@ async function useSample() {
     if (!blob) throw new Error('Could not load the sample.');
     const file = new File([blob], `AI-generated-${modality.toUpperCase()}-sample.png`, { type: 'image/png' });
     file.jingweiGeneratedSample = true;
-    if (sequence === state.predictionSequence) analyzeFile(file, includeHeatmap);
+    if (sequence === state.predictionSequence) await analyzeFile(file, includeHeatmap);
   } catch {
     if (sequence === state.predictionSequence) setNotice('predictionError', 'The sample could not load. Choose an image or try again.', true);
-  } finally { button.disabled = false; }
+  } finally {
+    state.samplePending = false;
+    button.disabled = state.predictionPending;
+  }
 }
 
 async function analyzeFile(file, includeHeatmap = $('includeHeatmap').checked) {
@@ -395,7 +432,7 @@ async function analyzeFile(file, includeHeatmap = $('includeHeatmap').checked) {
         $('imageDimensions').textContent = image.width && image.height ? `${image.width} × ${image.height}` : '';
       }).catch(() => { /* Prediction can still provide the final preview. */ });
     }
-    $('predictionPhase').textContent = includeHeatmap ? 'Analyzing image with heatmap…' : 'Analyzing image…';
+    $('predictionPhase').textContent = includeHeatmap ? 'Analyzing image and generating heatmap…' : 'Analyzing image…';
     const prediction = await api('/api/predict', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal,
       body: JSON.stringify({ modality, filename: file.name, image_base64: imageBase64, include_heatmap: includeHeatmap }),
@@ -432,6 +469,7 @@ function predictionLabel(result) {
 function renderResult() {
   const result = state.result;
   const pending = state.predictionPending;
+  $('useSample').disabled = state.samplePending || pending;
   const hasError = !$('predictionError').classList.contains('hidden');
   const showAnalysisTime = !pending && Number.isFinite(result?.analysisElapsedSeconds);
   $('resultStatus').textContent = hasError ? 'Analysis failed' : showAnalysisTime ? `Analysis time · ${result.analysisElapsedSeconds.toFixed(2)} s` : '';
@@ -578,15 +616,15 @@ function renderReport() {
   const includeAttribution = ['ready', 'unavailable'].includes(result.attribution?.status);
   const attribution = result.attribution?.status === 'ready' ? result.attribution : null;
   const imageLegend = !includeAttribution ? '' : attribution && !attribution.empty
-    ? `<div class="report-heatmap-key" role="img" aria-label="Relative display scale, not raw attribution units: blue minus one, white zero, red plus one"><span>−1</span><span class="report-heatmap-scale" aria-hidden="true">0</span><span>+1</span><span class="report-heatmap-key-label">Relative display scale</span></div><p class="report-image-note">Red increases and blue decreases the RVL Score relative to a blurred reference. Zero is transparent in the overlay. These maps explain model attribution, not lesion location.</p>`
-    : `<p class="report-image-note">${attribution ? 'No attribution relative to the blurred reference.' : 'Heatmap unavailable'}</p>`;
+    ? `<div class="report-heatmap-key" role="img" aria-label="Relative scale for this image, not raw attribution units: blue minus one, white zero, red plus one"><span>−1</span><span class="report-heatmap-scale" aria-hidden="true">0</span><span>+1</span><span class="report-heatmap-key-label">Relative scale for this image</span></div><p class="report-image-note">Red shows contributions that increase the RVL Score; blue shows contributions that decrease it, relative to a blurred version of the same image. Smoothing applies only to the heatmap; zero is transparent in the overlay. Color intensity is not comparable across images. These maps show model attribution, not lesion location.</p>`
+    : `<p class="report-image-note">${attribution ? 'No visible contributions in this heatmap.' : 'Heatmap unavailable'}</p>`;
   const imagePanel = (label, source, unavailable) => `<figure class="report-image"><div class="report-image-frame">${source ? `<img src="${e(source)}" alt="${e(label)} of the analyzed field">` : `<span class="report-image-placeholder">${unavailable}</span>`}</div><figcaption>${label}</figcaption></figure>`;
   const chart = !compatible ? `<div class="chart-empty">No matching reference for these weights</div>` : state.referencePending ? `<div class="chart-empty">Loading reference…</div>` : state.referenceError ? `<div class="chart-empty">Reference distribution unavailable</div>` : distributionSvg(reference, result).replace('fill="#eff1f4"', 'fill="#252a34"').replace('font-size="15" fill="#252a34"', 'font-size="15" fill="#ffffff"');
   const institution = (snapshot.institution || '').trim();
   const showInstitution = institution && institution.toLowerCase() !== 'jingwei system';
   const interpretation = result.interpretation || presetInterpretation(result);
   const interpretationPending = state.interpretationPending && state.interpretationResult === result;
-  const interpretationStatus = interpretationPending ? 'Preparing interpretation…' : interpretation.source === 'llm' ? 'AI-assisted' : '';
+  const interpretationStatus = interpretationPending ? 'Preparing interpretation…' : interpretation.source === 'llm' ? 'AI-assisted interpretation' : '';
   const printedAt = new Date();
   const reportDate = new Intl.DateTimeFormat('en-GB', {
     day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
@@ -599,14 +637,14 @@ function renderReport() {
   $('printReport').disabled = (compatible && state.referencePending) || interpretationPending;
   $('reportPage').innerHTML = `
     <header class="report-header"><div class="report-brand-group"><span class="report-brand-label"><img class="brand-wordmark" src="/jingwei-wordmark.svg?v=20261010" alt="JingWei"> <small class="report-brand-companion">精卫</small></span>${showInstitution ? `<span class="report-institution">${e(institution)}</span>` : ''}</div><span class="report-header-meta">Clinical report</span></header>
-    <div class="report-title-block"><h1 class="report-title">Retinal Vascular Leakage Assessment</h1><p class="report-subtitle">Assisted assessment report</p></div>
+    <div class="report-title-block"><h1 class="report-title">Retinal Vascular Leakage Assessment</h1><p class="report-subtitle">Model-based RVL prediction in uveitis</p></div>
     <div class="report-metadata"><span>Report ID: <span class="report-id">${e(result.id)}</span></span><span>Analyzed: <time datetime="${e(result.timestamp)}">${e(reportDate.format(new Date(result.timestamp)))}</time></span></div>
     <dl class="report-patient">${datum('Patient name', patient.name)}${datum('Patient ID', patient.id)}${datum('Exam date', patient.date)}${datum('Eye', eyeLabel(patient.eye))}${datum('Referring clinician', patient.physician)}${datum('Modality', result.modality.toUpperCase())}</dl>
     <h2 class="report-section-title report-section-primary">Assessment results</h2>
-    <div class="report-measurements${includeAttribution ? '' : ' report-measurements-with-image'}"><dl class="report-result-fields"><div><dt>RVL Score</dt><dd>${number(result.score, 3)}</dd></div><div><dt>Predicted probability</dt><dd>${number(result.probability * 100, 1)}<span>%</span></dd></div><div><dt>RVL prediction</dt><dd><strong class="report-prediction-value">${result.positive ? 'Positive' : 'Negative'}</strong></dd></div></dl>${includeAttribution ? '' : imagePanel(snapshot.aiGeneratedSample ? 'AI-generated sample' : 'Original', reportImage, 'Analyzed image unavailable')}</div>
-    ${includeAttribution ? `<h2 class="report-section-title">Contributing regions</h2><div class="report-images">${imagePanel(snapshot.aiGeneratedSample ? 'AI-generated sample' : 'Original', reportImage, 'Analyzed image unavailable')}${imagePanel('Heatmap', pngImage(attribution?.heatmap), 'Heatmap unavailable')}${imagePanel('Overlay', pngImage(attribution?.overlay), 'Overlay unavailable')}</div>${imageLegend}` : ''}
+    <div class="report-measurements${includeAttribution ? '' : ' report-measurements-with-image'}"><dl class="report-result-fields"><div><dt>RVL Score</dt><dd>${number(result.score, 3)}</dd></div><div><dt>Predicted probability</dt><dd>${number(result.probability * 100, 1)}<span>%</span></dd></div><div><dt>RVL prediction</dt><dd><strong class="report-prediction-value">${result.positive ? 'Positive' : 'Negative'}</strong></dd></div></dl>${includeAttribution ? '' : imagePanel(snapshot.aiGeneratedSample ? 'AI-generated sample' : 'Model input', reportImage, 'Analyzed image unavailable')}</div>
+    ${includeAttribution ? `<h2 class="report-section-title">Contributing regions</h2><div class="report-images">${imagePanel(snapshot.aiGeneratedSample ? 'AI-generated sample' : 'Model input', reportImage, 'Analyzed image unavailable')}${imagePanel('Heatmap', pngImage(attribution?.heatmap), 'Heatmap unavailable')}${imagePanel('Overlay', pngImage(attribution?.overlay), 'Overlay unavailable')}</div>${imageLegend}` : ''}
     <h2 class="report-section-title">Reference distribution</h2>
-    <div class="report-distribution"><div class="report-chart-legend ${compatible ? '' : 'hidden'}"><span><i class="legend-dot positive"></i>RVL positive</span><span><i class="legend-dot negative"></i>RVL negative</span><span><i class="legend-individual"></i>This image</span></div>${chart}${compatible ? `<div class="report-reference-note">FFA reference · ${e(referenceTitle)}</div>` : ''}</div>
+    <div class="report-distribution"><div class="report-chart-legend ${compatible ? '' : 'hidden'}"><span><i class="legend-dot positive"></i>RVL positive</span><span><i class="legend-dot negative"></i>RVL negative</span><span><i class="legend-individual"></i>This image</span></div>${chart}${compatible ? `<div class="report-reference-note">Reference cohort · ${e(referenceTitle)} (RVL assessed by FFA)</div>` : ''}</div>
     <section class="report-interpretation"><h2 class="report-section-title">Interpretation${interpretationStatus ? `<span class="report-interpretation-status${interpretationPending ? ' report-interpretation-pending' : ''}">${e(interpretationStatus)}</span>` : ''}</h2><p class="report-interpretation-text">${e(interpretation.text)}</p></section>
     <div class="report-signature"><span>Reviewed by <i class="signature-line"></i></span><span>Review date <i class="signature-line"></i></span></div>
     <footer class="report-footer"><time datetime="${printedAt.toISOString()}">${e(printedLabel)}</time><span class="report-preview-page">Page 1 of 1</span></footer>`;
@@ -694,6 +732,7 @@ async function initialize() {
   $('applyPatient').addEventListener('click', () => { if (!state.result) return; state.result.snapshot.patient = patientInformation(); updatePatientDirty(); });
   populateSettings();
   renderResult();
+  startHealthPolling();
   await Promise.allSettled([
     api('/api/settings').then((settings) => { state.settings = settings; populateSettings(); renderHealth(); }).catch(() => setNotice('serviceNotice', 'Could not load settings. Start the service and refresh.', true)),
     refreshHealth(), loadReference(),

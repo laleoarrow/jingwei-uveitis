@@ -1,6 +1,6 @@
 # JingWei · 精卫
 
-JingWei: non-invasive prediction system of retinal vascular leakage in uveitis from fundus photography or OCT.
+JingWei uses color fundus photography (CFP) or OCT images to predict FFA-assessed retinal vascular leakage (RVL) in uveitis.
 
 **[Online demo](https://laleoarrow.github.io/jingwei-uveitis/) · [Installation](#installation) · [Use](#use)**
 
@@ -39,7 +39,7 @@ Alternatively, these default locations are recognised automatically:
 | CFP | `weights/CFP.pth` |
 | OCT | `weights/OCT.pth` |
 
-Leave **Processing device** on **Automatic** and **Include heatmap** and **Use LLM** unchecked for the first assessment.
+Leave **Processing device** on **Automatic** and **Include heatmap** and **AI-assisted interpretation** unchecked for the first assessment.
 
 ### Install with LLM
 
@@ -61,10 +61,12 @@ If I do not have weights yet, complete installation and explain how to add them 
 
 Supported images: JPEG, PNG, single-page TIFF and WebP, up to 20 MiB each.
 
+**System status** in Settings refreshes every five seconds. It shows service connectivity, available dependencies and the current processing stage. Weight labels distinguish files found from a model actually loaded. Dependency checks confirm that packages are present; model compatibility is checked when the weights load.
+
 Optional settings apply to the next assessment:
 
-- **Include heatmap** applies immediately to the next sample or upload; **Save changes** remembers the preference across reloads. It adds signed pixel-level Integrated Gradients maps and overlays to the report and takes longer to compute. Red increases and blue decreases the RVL Score relative to a blurred reference; zero is transparent in the overlay. These maps explain model attribution, not lesion location. If the attribution fails its convergence check, the report marks the heatmap unavailable. The online demo does not calculate heatmaps.
-- **Use LLM** adds interpretation through your configured service. Enter its **API URL**, **Model** and **API key** in Settings. A remote service requires internet access and receives only the modality, score and probability—not images or examination details. Without LLM access, the report uses threshold-based interpretation.
+- **Include heatmap** applies immediately to the next sample or upload; **Save changes** remembers the preference across reloads. It adds signed pixel-level Integrated Gradients maps and overlays to the report and takes longer to compute. Red and blue show contributions that increase and decrease the RVL Score relative to a blurred version of the same image; zero is transparent in the overlay. These maps explain model attribution, not lesion location. If the attribution fails its convergence check, the report marks the heatmap unavailable. The online demo does not calculate heatmaps.
+- **AI-assisted interpretation** rephrases the positive or negative prediction statement through your configured service. Enter its **API URL**, **Model** and **API key** in Settings. A remote service requires internet access and receives only the modality, RVL Score and predicted probability—not images or examination details. Without LLM access, the report uses threshold-based interpretation.
 
 ### IG display
 

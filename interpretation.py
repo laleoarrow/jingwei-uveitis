@@ -48,22 +48,15 @@ def numerical_sentence(result: dict) -> str:
     value = f"{percentage:.1f}"
     approximate = float(value) in {0, 50, 100} and float(value) != percentage
     if percentage == 50:
-        return "Predicted RVL probability is 50%, exactly at the 50% classification threshold."
+        return "Predicted RVL probability is 50.0%, exactly at the 50% classification threshold."
     direction = "below" if percentage < 50 else "above"
     return f"Predicted RVL probability is {'approximately ' if approximate else ''}{value}%, {direction} the 50% classification threshold."
 
 
 def template_text(result: dict) -> str:
     probability = result["probability"]
-    # These four variants only change wording; 0.5 is the sole decision threshold.
-    if probability < .2:
-        suffix = "The model output favors an RVL-negative prediction."
-    elif probability < .5:
-        suffix = "The model output falls on the RVL-negative side of the decision threshold."
-    elif probability < .8:
-        suffix = "The model output falls on the RVL-positive side of the decision threshold."
-    else:
-        suffix = "The model output favors an RVL-positive prediction."
+    direction = "RVL-positive" if probability >= .5 else "RVL-negative"
+    suffix = f"The model prediction is {direction}."
     return numerical_sentence(result) + " " + suffix
 
 

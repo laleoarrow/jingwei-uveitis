@@ -271,10 +271,13 @@ class AttributionTests(unittest.TestCase):
         def inexpensive_refinement(*args, **kwargs):
             return adaptive(*args, **kwargs, initial_order=2, high_order=4)
 
+        phases = []
         with patch.object(core, "integrated_gradients", return_value=raw), patch.object(
                 core, "adaptive_margin_integrated_gradients", side_effect=inexpensive_refinement) as refine:
-            result = attribution.build_attribution(model, self.tensor, self.crop, "cfp", "cpu", self.baseline(model))
+            result = attribution.build_attribution(model, self.tensor, self.crop, "cfp", "cpu", self.baseline(model),
+                                                   on_phase=phases.append)
         refine.assert_called_once()
+        self.assertEqual(phases, ["refining"])
         self.assertEqual(refine.call_args.kwargs["max_evaluations"], attribution.REFINEMENT_MAX_EVALUATIONS)
         self.assertEqual(result["status"], "ready")
         self.assertTrue(result["diagnostics"]["converged"])

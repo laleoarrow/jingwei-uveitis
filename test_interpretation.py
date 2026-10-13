@@ -6,6 +6,7 @@ import math
 import stat
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
 
@@ -104,9 +105,24 @@ class SettingsAndRequestTests(unittest.TestCase):
                 self.assertEqual(response.status_code, 200, response.text)
                 self.assertEqual(response.json()["source"], "template")
                 self.assertFalse(response.json()["fallback"])
-                self.assertIn("RVL-" + label, response.json()["text"])
+                self.assertTrue(response.json()["text"].endswith(f"The model prediction is RVL-{label}."))
                 self.assertIn("50%", response.json()["text"])
+                if probability == .5:
+                    self.assertTrue(response.json()["text"].startswith("Predicted RVL probability is 50.0%, exactly at"))
+                elif probability == .499999:
+                    self.assertTrue(response.json()["text"].startswith("Predicted RVL probability is approximately 50.0%, below"))
             client.assert_not_called()
+
+    def test_disabled_interpretation_does_not_wait_for_inference_lock(self):
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            with server.engine.lock, patch.object(interpretation.httpx, "AsyncClient") as client:
+                request = executor.submit(self.client.post, "/api/interpret", json=result())
+                response = request.result(timeout=1)
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertEqual(response.json(), {
+                    "text": interpretation.template_text(result()), "source": "template", "fallback": False,
+                })
+                client.assert_not_called()
 
     def test_invalid_numeric_and_extra_private_fields_rejected(self):
         requests = [dict(result(), score=0), dict(result(), probability=1.1),
