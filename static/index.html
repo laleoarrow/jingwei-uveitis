@@ -10,9 +10,9 @@
   <script>
     if (window.location.protocol === 'file:') window.location.replace('http://127.0.0.1:8765/');
   </script>
-  <link rel="stylesheet" href="/styles.css?v=20261013-status">
+  <link rel="stylesheet" href="/styles.css?v=20261013-status-colors">
   <style id="reportPrintMetadata"></style>
-  <script src="/app.js?v=20261013-status" defer></script>
+  <script src="/app.js?v=20261013-status-colors" defer></script>
 </head>
 <body>
   <header class="app-header">
@@ -100,9 +100,9 @@
           <section class="settings-card service-status-card" aria-labelledby="serviceStatusTitle">
             <h2 id="serviceStatusTitle">System status</h2>
             <dl class="service-status-grid" aria-live="polite">
-              <div><dt>Service</dt><dd id="serviceState">Checking…</dd></div>
-              <div><dt>Environment</dt><dd id="environmentState">Checking…</dd></div>
-              <div><dt>Activity</dt><dd id="activityState">Checking…</dd></div>
+              <div><dt>Service</dt><dd id="serviceState" class="status-unknown">Checking…</dd></div>
+              <div><dt>Environment</dt><dd id="environmentState" class="status-unknown">Checking…</dd></div>
+              <div><dt>Activity</dt><dd id="activityState" class="status-unknown">Checking…</dd></div>
             </dl>
             <p class="settings-note" id="healthCheckedAt">Checking service…</p>
           </section>
