@@ -10,9 +10,9 @@
   <script>
     if (window.location.protocol === 'file:') window.location.replace('http://127.0.0.1:8765/');
   </script>
-  <link rel="stylesheet" href="/styles.css?v=20261013-heatmap-border">
+  <link rel="stylesheet" href="/styles.css?v=20261013-status">
   <style id="reportPrintMetadata"></style>
-  <script src="/app.js?v=20261013-heatmap" defer></script>
+  <script src="/app.js?v=20261013-status" defer></script>
 </head>
 <body>
   <header class="app-header">
@@ -97,6 +97,15 @@
       <section id="settingsView" class="view hidden">
         <div class="page-heading"><h1>Settings</h1></div>
         <form id="settingsForm" class="settings-layout">
+          <section class="settings-card service-status-card" aria-labelledby="serviceStatusTitle">
+            <h2 id="serviceStatusTitle">System status</h2>
+            <dl class="service-status-grid" aria-live="polite">
+              <div><dt>Service</dt><dd id="serviceState">Checking…</dd></div>
+              <div><dt>Environment</dt><dd id="environmentState">Checking…</dd></div>
+              <div><dt>Activity</dt><dd id="activityState">Checking…</dd></div>
+            </dl>
+            <p class="settings-note" id="healthCheckedAt">Checking service…</p>
+          </section>
           <section class="settings-card">
             <h2>Model weights</h2>
             <p class="settings-note" id="weightPathHint">Configure CFP, OCT, or both. Enter the path to your weight file; no renaming is needed.</p>
@@ -109,15 +118,16 @@
             <h2>Report</h2>
             <label><span>Institution / department</span><input id="institution" type="text" maxlength="120" autocomplete="organization"></label>
             <label class="llm-toggle heatmap-toggle"><input id="includeHeatmap" type="checkbox" aria-describedby="heatmapHint"><span>Include heatmap</span></label>
-            <p id="heatmapHint" class="settings-note">Uses Integrated Gradients (IG) to show positive and negative contributions. Applies to the next sample or upload and takes longer to compute. Save changes to remember this preference.</p>
+            <p id="heatmapHint" class="settings-note">Uses Integrated Gradients (IG) to show contributions to the RVL Score. Adds processing time. Changes apply to the next sample or upload; the current analysis is unchanged. Save changes to keep this preference after a refresh.</p>
           </section>
           <section class="settings-card interpretation-settings">
-            <div class="section-heading"><h2>Report interpretation</h2><label class="llm-toggle"><input id="llmEnabled" type="checkbox"><span>Use LLM</span></label></div>
+            <h2>Report interpretation</h2>
+            <label class="llm-toggle"><input id="llmEnabled" type="checkbox"><span>AI-assisted interpretation</span></label>
             <div id="llmFields" class="llm-fields hidden">
               <label><span>API URL</span><input id="llmBaseUrl" type="url" placeholder="https://api.example.com/v1" autocomplete="off" spellcheck="false"></label>
               <label><span>Model</span><input id="llmModel" type="text" maxlength="200" autocomplete="off" spellcheck="false"></label>
               <label><span>API key</span><span class="llm-key-row"><input id="llmApiKey" type="password" autocomplete="new-password" spellcheck="false"><button id="clearLlmKey" class="button button-secondary" type="button">Remove key</button></span></label>
-              <p class="settings-note">Only prediction results are sent.</p>
+              <p class="settings-note">Rephrases the prediction statement using only the modality, RVL Score and predicted probability. No images or examination details are sent.</p>
             </div>
           </section>
           <div id="settingsMessage" class="notice hidden" role="status"></div>

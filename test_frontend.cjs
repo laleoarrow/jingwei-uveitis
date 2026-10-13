@@ -13,12 +13,14 @@ const styles = readFileSync(join(__dirname, 'static/styles.css'), 'utf8');
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 const submit = { preventDefault() {} };
 
-function browser() {
+function browser(demo = false, liveHealth = false) {
   const elements = new Map();
   const element = (id) => {
+    if (demo && id === 'includeHeatmap') return null;
     if (!elements.has(id)) elements.set(id, {
       value: '', checked: false, textContent: '', innerHTML: '', disabled: false,
-      classList: { toggle() {}, add() {}, remove() {} },
+      classList: { toggle() {}, add() {}, remove() {}, contains() { return false; } },
+      style: {}, addEventListener() {},
       removeAttribute() {}, replaceChildren() { this.innerHTML = ''; },
       querySelector() { return element(`${id}:child`); },
       sheet: { cssRules: [{ cssRules: [] }] },
@@ -26,6 +28,8 @@ function browser() {
     return elements.get(id);
   };
   const requests = [];
+  const timeouts = new Map(), intervals = new Map();
+  let timerId = 0;
   const images = [], canvases = [];
   class Image {
     constructor() { this.naturalWidth = 1600; this.naturalHeight = 900; images.push(this); }
@@ -34,6 +38,8 @@ function browser() {
   const context = vm.createContext({
     document: {
       getElementById: element,
+      querySelectorAll: () => [],
+      querySelector: element,
       createElement(tag) {
         assert.equal(tag, 'canvas');
         const canvas = {
@@ -44,24 +50,46 @@ function browser() {
         return canvas;
       },
     }, AbortController, performance, Image, File,
+    window: {
+      scrollTo() {},
+      jingweiDemoInterpretation: 'Illustrative result — not calculated from your image.',
+      jingweiDemoApi(path, options) {
+        return new Promise((resolve) => requests.push({ path, options, respond: resolve }));
+      },
+    },
     URL: { createObjectURL: () => 'blob:test-image', revokeObjectURL() {} },
-    setTimeout: () => 1, clearTimeout() {}, setInterval: () => 1, clearInterval() {},
+    setTimeout(handler, delay) { timeouts.set(++timerId, { handler, delay }); return timerId; },
+    clearTimeout(id) { timeouts.delete(id); },
+    setInterval(handler, delay) { intervals.set(++timerId, { handler, delay }); return timerId; },
+    clearInterval(id) { intervals.delete(id); },
     fetch(path, options) {
-      return new Promise((resolve) => requests.push({
-        path, options,
-        respond(data, ok = true) { resolve({ ok, status: ok ? 200 : 400, json: async () => data }); },
-      }));
+      return new Promise((resolve, reject) => {
+        requests.push({ path, options, fail: reject,
+          respond(data, ok = true) { resolve({ ok, status: ok ? 200 : 400, json: async () => data }); },
+        });
+        if (path === '/api/health') options.signal?.addEventListener('abort', () => {
+          const error = new Error('Request aborted'); error.name = 'AbortError'; reject(error);
+        });
+      });
     },
   });
   // Skip only automatic page initialization; keep the lifecycle and report functions intact.
   assert.match(source, /\ninitialize\(\);\s*$/);
-  const app = vm.runInContext(source.replace(/\ninitialize\(\);\s*$/, '') + `
+  const browserSource = demo
+    ? readFileSync(join(__dirname, 'docs/app.js'), 'utf8').split('\nconst jingweiInstallPrompt = ')[0]
+    : source.replace(/\ninitialize\(\);\s*$/, '');
+  const app = vm.runInContext(browserSource + `
+    const actualRenderResult = renderResult;
     readFile = async () => 'data:image/png;base64,AA==';
     showPreview = renderResult = updatePatientDirty = populateSettings = () => {};
-    refreshHealth = async () => {};
-    ({ state, saveSettings, ensureInterpretation, analyzeFile, renderReport, useSample, invalidatePrediction });
+    ${liveHealth ? '' : 'refreshHealth = async () => {};'}
+    ({ state, saveSettings: typeof saveSettings === 'function' ? saveSettings : null,
+       ensureInterpretation, analyzeFile, renderReport, useSample, invalidatePrediction,
+       refreshHealth, renderHealth, setView,
+       renderResult: actualRenderResult,
+       startHealthPolling: typeof startHealthPolling === 'function' ? startHealthPolling : null });
   `, context);
-  return { ...app, element, requests, images, canvases };
+  return { ...app, element, requests, images, canvases, timeouts, intervals };
 }
 
 function result(revision = 0) {
@@ -78,6 +106,108 @@ const analyze = (app) => app.analyzeFile({ name: 'fixture.png', size: 1, type: '
 const requestsFor = (app, path) => app.requests.filter((request) => request.path === path);
 const finishSave = (app, succeeds) => requestsFor(app, '/api/settings').at(-1)
   .respond(succeeds ? { llm_model: 'next-model' } : { detail: 'Save rejected' }, succeeds);
+
+const healthy = () => ({
+  status: 'ok', device: 'mps', available_devices: ['cpu', 'mps'], reference_available: true,
+  models: { cfp: { exists: true, loaded: false }, oct: { exists: true, loaded: true } },
+  environment: { status: 'available', missing: [] },
+  activity: { phase: 'idle', modality: null, elapsed_seconds: 0 },
+});
+
+test('health displays dependency, model and live activity states without claiming unloaded weights are ready', () => {
+  const app = browser(false, true);
+  app.element('device').value = 'auto';
+  app.state.health = healthy();
+  app.renderHealth();
+  assert.equal(app.element('serviceState').textContent, 'Online');
+  assert.equal(app.element('environmentState').textContent, 'Dependencies found');
+  assert.equal(app.element('activityState').textContent, 'Ready');
+  assert.equal(app.element('cfpWeightState').textContent, 'Weights found');
+  assert.equal(app.element('octWeightState').textContent, 'Model loaded');
+  for (const [phase, expected] of [['analyzing', 'Analyzing OCT'], ['heatmap', 'Generating OCT heatmap'], ['refining', 'Refining OCT heatmap']]) {
+    app.state.health.activity = { phase, modality: 'oct', elapsed_seconds: 127.8 };
+    app.renderHealth();
+    assert.equal(app.element('activityState').textContent, `${expected} · 127 s`);
+  }
+  app.state.health.environment = { status: 'missing', missing: ['captum', 'torch'] };
+  app.state.health.status = 'degraded';
+  app.state.health.activity.phase = 'idle';
+  app.renderHealth();
+  assert.equal(app.element('environmentState').textContent, 'Missing: captum, torch');
+  assert.equal(app.element('activityState').textContent, 'Needs setup');
+});
+
+test('health polling is bounded, does not overlap, clears offline state and recovers without cancelling inference', async () => {
+  const app = browser(false, true);
+  app.startHealthPolling();
+  app.startHealthPolling();
+  assert.equal(app.intervals.size, 1);
+  const poll = [...app.intervals.values()][0];
+  assert.equal(poll.delay, 5000);
+  const first = app.refreshHealth();
+  await app.refreshHealth();
+  await poll.handler();
+  assert.equal(requestsFor(app, '/api/health').length, 1);
+  requestsFor(app, '/api/health')[0].respond(healthy());
+  await first;
+  const previousCheck = app.state.healthCheckedAt;
+  const predictionController = app.state.predictionController = new AbortController();
+  app.state.predictionPending = true;
+  const timedOut = poll.handler();
+  const timeout = [...app.timeouts.values()][0];
+  assert.equal(timeout.delay, 4000);
+  timeout.handler();
+  await timedOut;
+  assert.equal(app.state.health, null);
+  assert.equal(app.state.healthPending, false);
+  assert.notEqual(app.state.healthCheckedAt, previousCheck);
+  assert.match(app.element('healthCheckedAt').textContent, /^Last checked /);
+  assert.equal(app.element('serviceState').textContent, 'Offline');
+  assert.equal(app.element('environmentState').textContent, 'Unavailable');
+  assert.equal(app.element('activityState').textContent, 'Unavailable');
+  assert.equal(app.element('octWeightState').textContent, 'Unavailable');
+  assert.equal(app.element('deviceStatus').textContent, 'Device availability unknown');
+  assert.equal(app.state.predictionPending, true);
+  assert.equal(predictionController.signal.aborted, false);
+  const recovering = poll.handler();
+  requestsFor(app, '/api/health')[2].respond(healthy());
+  await recovering;
+  assert.equal(app.element('serviceState').textContent, 'Online');
+  assert.equal(app.element('activityState').textContent, 'Ready');
+  assert.equal(app.element('serviceNotice').textContent, '');
+});
+
+test('entering Settings checks service immediately and does not duplicate an in-flight check', async () => {
+  const app = browser(false, true);
+  app.setView('settings');
+  app.setView('settings');
+  assert.equal(requestsFor(app, '/api/health').length, 1);
+  requestsFor(app, '/api/health')[0].respond(healthy());
+  await tick();
+  assert.equal(app.element('serviceState').textContent, 'Online');
+});
+
+test('a lost prediction connection stops its timer and offers a reconnection message', async () => {
+  const app = browser();
+  const analyzing = analyze(app);
+  await tick();
+  requestsFor(app, '/api/predict')[0].fail(new TypeError('Failed to fetch'));
+  await analyzing;
+  assert.equal(app.state.predictionPending, false);
+  assert.equal(app.state.predictionTimer, null);
+  assert.equal(app.intervals.size, 0);
+  assert.equal(app.element('predictionError').textContent, 'Service connection lost. Reconnect to JingWei and try again.');
+});
+
+test('static demo has no live service card or health polling', () => {
+  const app = browser(true);
+  assert.equal(app.startHealthPolling, null);
+  assert.equal(app.intervals.size, 0);
+  assert.doesNotMatch(readFileSync(join(__dirname, 'docs/app.js'), 'utf8'), /startHealthPolling|setInterval\(refreshHealth/);
+  const html = readFileSync(join(__dirname, 'docs/index.html'), 'utf8');
+  assert.doesNotMatch(html, /id="serviceState"/);
+  assert.match(html, /No image analysis is performed/);
+});
 
 for (const succeeds of [true, false]) {
   test(`save ${succeeds ? 'success' : 'failure'} cancels old interpretation and ignores its late response`, async () => {
@@ -183,7 +313,7 @@ test('pending report status is hidden only in print; settled AI attribution stay
   assert.match(app.element('reportPage').innerHTML, /Predicted RVL probability is 70\.0%/);
   requestsFor(app, '/api/interpret')[0].respond({ text: 'Finished interpretation', source: 'llm' });
   await interpreting;
-  assert.equal(status().text, 'AI-assisted');
+  assert.equal(status().text, 'AI-assisted interpretation');
   assert.equal(hiddenBy(status(), printCss), false);
   assert.equal(app.element('printReport').disabled, false);
 });
@@ -203,14 +333,14 @@ test('signed pixel IG report labels both directions with a relative scale and un
   app.renderReport();
   const report = app.element('reportPage').innerHTML;
   assert.match(report, /<h2 class="report-section-title">Contributing regions<\/h2>/);
-  assert.match(report, /src="data:image\/png;base64,MODEL_INPUT" alt="Original of the analyzed field"/);
+  assert.match(report, /src="data:image\/png;base64,MODEL_INPUT" alt="Model input of the analyzed field"/);
   assert.doesNotMatch(report, /base64,UPLOAD|base64,BLURRED_REFERENCE/);
   assert.match(report, /src="data:image\/png;base64,HEATMAP" alt="Heatmap of the analyzed field"/);
   assert.match(report, /src="data:image\/png;base64,OVERLAY" alt="Overlay of the analyzed field"/);
   assert.match(report, /<span>−1<\/span><span class="report-heatmap-scale" aria-hidden="true">0<\/span><span>\+1<\/span>/);
-  assert.match(report, /Red increases and blue decreases the RVL Score relative to a blurred reference/);
-  assert.match(report, /Zero is transparent in the overlay/);
-  assert.match(report, /Relative display scale, not raw attribution units/);
+  assert.match(report, /Red shows contributions that increase the RVL Score; blue shows contributions that decrease it/);
+  assert.match(report, /zero is transparent in the overlay/);
+  assert.match(report, /Relative scale for this image, not raw attribution units/);
   assert.match(report, /model attribution, not lesion location/);
   assert.doesNotMatch(report, /Only positive contributions|<span>Low<\/span>|<span>High<\/span>/);
   assert.match(styles, /linear-gradient\(to right, #0000ff 0%, #ffffff 50%, #ff0000 100%\)/);
@@ -241,7 +371,7 @@ test('zero IG is described without implying that only positive values are consid
   };
   app.renderReport();
   const report = app.element('reportPage').innerHTML;
-  assert.match(report, /No attribution relative to the blurred reference\./);
+  assert.match(report, /No visible contributions in this heatmap\./);
   assert.doesNotMatch(report, /report-heatmap-key|No positive|positive IG attribution/);
 });
 
@@ -272,7 +402,7 @@ for (const enabled of [true, false]) {
     const request = requestsFor(app, '/api/predict')[0];
     assert.equal(JSON.parse(request.options.body).include_heatmap, enabled);
     assert.equal(app.element('predictionPhase').textContent,
-      enabled ? 'Analyzing image with heatmap…' : 'Analyzing image…');
+      enabled ? 'Analyzing image and generating heatmap…' : 'Analyzing image…');
     assert.equal(requestsFor(app, '/api/settings').length, 0);
     assert.equal(app.state.settings.include_heatmap, !enabled);
     request.respond(result());
@@ -289,6 +419,8 @@ for (const modality of ['cfp', 'oct']) {
     const loading = app.useSample();
     app.element('includeHeatmap').checked = false;
     assert.equal(app.element('useSample').disabled, true);
+    await app.useSample();
+    assert.equal(app.images.length, 1);
     assert.equal(app.images[0].src, `assets/sample-${modality}-generated.png`);
     app.images[0].finishDecode();
     await tick();
@@ -297,8 +429,12 @@ for (const modality of ['cfp', 'oct']) {
     assert.equal(canvas.height, 900);
     assert.deepEqual(canvas.drawn, [app.images[0], 0, 0]);
     canvas.finishBlob();
-    await loading;
-    assert.equal(app.element('useSample').disabled, false);
+    await tick();
+    assert.equal(app.element('useSample').disabled, true);
+    assert.equal(app.state.predictionPending, true);
+    await app.useSample();
+    assert.equal(app.images.length, 1);
+    assert.equal(requestsFor(app, '/api/predict').length, 1);
     const prediction = requestsFor(app, '/api/predict')[0];
     const body = JSON.parse(prediction.options.body);
     assert.equal(body.modality, modality);
@@ -306,7 +442,8 @@ for (const modality of ['cfp', 'oct']) {
     assert.equal(requestsFor(app, '/api/settings').length, 0);
     assert.equal(body.filename, `AI-generated-${modality.toUpperCase()}-sample.png`);
     prediction.respond({ ...result(), modality });
-    await tick();
+    await loading;
+    assert.equal(app.element('useSample').disabled, false);
     assert.equal(app.state.result.snapshot.aiGeneratedSample, true);
     assert.equal(app.state.result.score, 1);
     assert.equal(app.state.result.probability, .7);
@@ -324,10 +461,83 @@ for (const modality of ['cfp', 'oct']) {
     await uploaded;
     assert.equal(app.state.result.snapshot.aiGeneratedSample, false);
     app.renderReport();
-    assert.match(app.element('reportPage').innerHTML, /<figcaption>Original<\/figcaption>/);
+    assert.match(app.element('reportPage').innerHTML, /<figcaption>Model input<\/figcaption>/);
     assert.doesNotMatch(app.element('reportPage').innerHTML, /AI-generated sample/);
   });
 }
+
+test('sample button is restored when a pending prediction fails', async () => {
+  const app = browser();
+  const loading = app.useSample();
+  app.images[0].finishDecode();
+  await tick();
+  app.canvases[0].finishBlob();
+  await tick();
+  assert.equal(app.element('useSample').disabled, true);
+  requestsFor(app, '/api/predict')[0].respond({ detail: 'Model unavailable' }, false);
+  await loading;
+  assert.equal(app.element('useSample').disabled, false);
+  assert.equal(app.state.predictionPending, false);
+  assert.equal(app.element('predictionError').textContent, 'Model unavailable');
+  assert.equal(app.state.result, null);
+});
+
+test('an upload disables sample requests until prediction finishes', async () => {
+  const app = browser();
+  const uploading = analyze(app);
+  await tick();
+  app.renderResult();
+  assert.equal(app.element('useSample').disabled, true);
+  await app.useSample();
+  assert.equal(app.images.length, 0);
+  assert.equal(requestsFor(app, '/api/predict').length, 1);
+  requestsFor(app, '/api/predict')[0].respond(result());
+  await uploading;
+  app.renderResult();
+  assert.equal(app.element('useSample').disabled, false);
+});
+
+test('an upload can replace a pending sample and its late response cannot replace the upload', async () => {
+  const app = browser();
+  const loading = app.useSample();
+  app.images[0].finishDecode();
+  await tick();
+  app.canvases[0].finishBlob();
+  await tick();
+  const sample = requestsFor(app, '/api/predict')[0];
+  const uploading = analyze(app);
+  await tick();
+  assert.equal(sample.options.signal.aborted, true);
+  requestsFor(app, '/api/predict')[1].respond({ ...result(), id: 'new-upload' });
+  await uploading;
+  sample.respond({ ...result(), id: 'old-sample' });
+  await loading;
+  assert.equal(app.state.result.id, 'new-upload');
+  assert.equal(app.state.result.snapshot.aiGeneratedSample, false);
+  assert.equal(app.element('useSample').disabled, false);
+});
+
+test('a replaced sample finishing cannot enable the button during a newer upload', async () => {
+  const app = browser();
+  const loading = app.useSample();
+  app.images[0].finishDecode();
+  await tick();
+  app.canvases[0].finishBlob();
+  await tick();
+  const sample = requestsFor(app, '/api/predict')[0];
+  const uploading = analyze(app);
+  await tick();
+  sample.respond(result());
+  await loading;
+  assert.equal(app.state.predictionPending, true);
+  assert.equal(app.element('useSample').disabled, true);
+  await app.useSample();
+  assert.equal(requestsFor(app, '/api/predict').length, 2);
+  requestsFor(app, '/api/predict')[1].respond(result());
+  await uploading;
+  app.renderResult();
+  assert.equal(app.element('useSample').disabled, false);
+});
 
 for (const phase of ['decoding', 'encoding']) {
   test(`sample finishing ${phase} after a new prediction sequence cannot replace the current case`, async () => {
@@ -349,6 +559,36 @@ for (const phase of ['decoding', 'encoding']) {
     assert.equal(requestsFor(app, '/api/predict').length, 0);
     assert.equal(app.element('useSample').disabled, false);
     assert.equal(app.element('predictionError').textContent, '');
+  });
+}
+
+for (const modality of ['cfp', 'oct']) {
+  test(`generated ${modality.toUpperCase()} demo sample and upload work without heatmap settings`, async () => {
+    assert.doesNotMatch(readFileSync(join(__dirname, 'docs/index.html'), 'utf8'), /id="includeHeatmap"/);
+    const app = browser(true);
+    app.state.modality = modality;
+    assert.equal(app.element('includeHeatmap'), null);
+    const loading = app.useSample();
+    app.images[0].finishDecode();
+    await tick();
+    app.canvases[0].finishBlob();
+    await tick();
+    const sample = requestsFor(app, '/api/predict')[0];
+    assert.equal(JSON.parse(sample.options.body).include_heatmap, false);
+    sample.respond({ ...result(), modality, attribution: { status: 'disabled' } });
+    await loading;
+    assert.equal(app.state.result.snapshot.aiGeneratedSample, true);
+    app.renderReport();
+    assert.match(app.element('reportPage').innerHTML, /Illustrative result — not calculated from your image/);
+    assert.doesNotMatch(app.element('reportPage').innerHTML, /Contributing regions/);
+    const uploading = analyze(app);
+    await tick();
+    const upload = requestsFor(app, '/api/predict')[1];
+    assert.equal(JSON.parse(upload.options.body).include_heatmap, false);
+    upload.respond({ ...result(), modality, attribution: { status: 'disabled' } });
+    await uploading;
+    assert.equal(app.state.result.snapshot.aiGeneratedSample, false);
+    assert.equal(requestsFor(app, '/api/settings').length, 0);
   });
 }
 

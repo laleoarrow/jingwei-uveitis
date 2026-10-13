@@ -113,6 +113,12 @@ select { cursor: pointer; }
 .settings-layout { max-width: 780px; margin: 0 auto; }
 .settings-card { padding: 5px 0 30px; margin-bottom: 29px; border-bottom: 1px solid var(--line); }
 .settings-card > h2 { margin-bottom: 27px; font-size: 15px; }
+.service-status-grid { display: grid; gap: 14px; margin: 0; font-size: 14px; }
+.service-status-grid > div { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 18px; }
+.service-status-grid dt { color: #606976; }
+.service-status-grid dd { margin: 0; overflow-wrap: anywhere; }
+.service-status-grid .status-unavailable { color: #bd806c; }
+.service-status-card .settings-note { font-size: 13px; }
 .weight-setting { margin-bottom: 26px; }
 .weight-heading { display: flex; align-items: baseline; gap: 17px; margin-bottom: 12px; }
 .weight-state { margin-left: auto; color: #8b9791; font-size: 14px; }

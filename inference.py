@@ -14,6 +14,7 @@ import threading
 import time
 import uuid
 import warnings
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -153,12 +154,44 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def cached_model_matches(cache, modality: str, path: str, device: str) -> bool:
+    if not cache:
+        return False
+    try:
+        normalized = normalize_checkpoint_path(path)
+        if not normalized:
+            return False
+        resolved = Path(normalized)
+        return (cache["modality"] == modality and cache["path"] == resolved
+                and cache["device"] == device and cache["fingerprint"] == _fingerprint(resolved))
+    except OSError:
+        return False
+
+
 class InferenceEngine:
     """One model at a time; settings changes share this lock with inference."""
 
     def __init__(self):
         self.lock = threading.RLock()
         self._cache = None
+        self._activity = {"phase": "idle", "modality": None, "started": None}
+
+    def activity(self) -> dict:
+        snapshot = self._activity
+        elapsed = time.perf_counter() - snapshot["started"] if snapshot["started"] is not None else 0
+        return {"phase": snapshot["phase"], "modality": snapshot["modality"],
+                "elapsed_seconds": round(elapsed, 3)}
+
+    def _set_phase(self, phase: str):
+        self._activity = {**self._activity, "phase": phase}
+
+    @contextmanager
+    def _track_activity(self, modality: str):
+        self._activity = {"phase": "analyzing", "modality": modality, "started": time.perf_counter()}
+        try:
+            yield
+        finally:
+            self._activity = {"phase": "idle", "modality": None, "started": None}
 
     def clear(self):
         with self.lock:
@@ -171,22 +204,7 @@ class InferenceEngine:
                 torch.mps.empty_cache()
 
     def loaded(self, modality: str, path: str, device: str) -> bool:
-        with self.lock:
-            if not self._cache:
-                return False
-            try:
-                normalized = normalize_checkpoint_path(path)
-                if not normalized:
-                    return False
-                resolved = Path(normalized)
-                return (
-                    self._cache["modality"] == modality
-                    and self._cache["path"] == resolved
-                    and self._cache["device"] == device
-                    and self._cache["fingerprint"] == _fingerprint(resolved)
-                )
-            except OSError:
-                return False
+        return cached_model_matches(self._cache, modality, path, device)
 
     def _load(self, modality: str, raw_path: str, device: str):
         import torch
@@ -263,7 +281,7 @@ class InferenceEngine:
             transforms.ToTensor(),
             transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
         ])(crop).unsqueeze(0)
-        with self.lock:
+        with self.lock, self._track_activity(modality):
             device = resolve_device(requested_device)
             loaded = self._load(modality, path, device)
             with torch.inference_mode():
@@ -286,8 +304,11 @@ class InferenceEngine:
                                else math.exp(score) / (1 + math.exp(score)))
             if not (math.isfinite(score) and math.isfinite(probability) and 0 <= probability <= 1):
                 raise InferenceError("Prediction values are invalid. No report was generated.", 500)
-            attribution = (build_attribution(loaded["model"], tensor, crop, modality, device, logits)
-                           if include_heatmap else {"status": "disabled"})
+            attribution = {"status": "disabled"}
+            if include_heatmap:
+                self._set_phase("heatmap")
+                attribution = build_attribution(loaded["model"], tensor, crop, modality, device, logits,
+                                                on_phase=self._set_phase)
             if loaded["fingerprint"] != _fingerprint(loaded["path"]):
                 self.clear()
                 raise InferenceError("The checkpoint changed during inference. Reload the weights before analyzing again.", 409)
