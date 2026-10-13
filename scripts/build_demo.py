@@ -8,7 +8,7 @@ import shutil
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "static"
 DOCS = ROOT / "docs"
-VERSION = "workbench-demo-17"
+VERSION = "workbench-demo-18"
 DOWNLOAD_URL = "https://github.com/laleoarrow/jingwei-uveitis/archive/refs/heads/main.zip"
 WEIGHTS_URL = "https://pan.baidu.com/s/1r7gfecgxxbtCQnV0FmZlSg?pwd=7a7c"
 INSTALL_URL = "https://github.com/laleoarrow/jingwei-uveitis#installation"
