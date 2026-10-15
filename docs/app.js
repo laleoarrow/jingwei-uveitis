@@ -9,7 +9,7 @@ const DEFAULTS = {
   device: 'auto', llm_enabled: false, llm_base_url: '', llm_model: '', llm_api_key_set: false,
 };
 const state = {
-  modality: 'cfp', settings: null, health: null, result: null, reference: null,
+  modality: 'oct', settings: null, health: null, result: null, reference: null,
   referenceError: '', referencePending: false, predictionPending: false, samplePending: false,
   predictionSequence: 0, referenceSequence: 0, predictionController: null,
   predictionTimer: null, predictionStartedAt: null,
@@ -481,7 +481,7 @@ function renderReport() {
   const includeAttribution = ['ready', 'unavailable'].includes(result.attribution?.status);
   const attribution = result.attribution?.status === 'ready' ? result.attribution : null;
   const imageLegend = !includeAttribution ? '' : attribution && !attribution.empty
-    ? `<div class="report-heatmap-key" role="img" aria-label="Relative scale for this image, not raw attribution units: blue minus one, white zero, red plus one"><span>−1</span><span class="report-heatmap-scale" aria-hidden="true">0</span><span>+1</span><span class="report-heatmap-key-label">Relative scale for this image</span></div><p class="report-image-note">Red shows contributions that increase the RVL Score; blue shows contributions that decrease it, relative to a blurred version of the same image. Smoothing applies only to the heatmap; zero is transparent in the overlay. Color intensity is not comparable across images. These maps show model attribution, not lesion location.</p>`
+    ? `<div class="report-heatmap-key" role="img" aria-label="Relative scale for this image, not raw attribution units: blue minus one, white zero, red plus one"><span>−1</span><span class="report-heatmap-scale" aria-hidden="true">0</span><span>+1</span><span class="report-heatmap-key-label">Relative scale for this image</span></div><p class="report-image-note">Red and blue indicate positive and negative contributions to the RVL score, respectively.</p>`
     : `<p class="report-image-note">${attribution ? 'No visible contributions in this heatmap.' : 'Heatmap unavailable'}</p>`;
   const imagePanel = (label, source, unavailable) => `<figure class="report-image"><div class="report-image-frame">${source ? `<img src="${e(source)}" alt="${e(label)} preview; not analyzed">` : `<span class="report-image-placeholder">${unavailable}</span>`}</div><figcaption>${label}</figcaption></figure>`;
   const chart = !compatible ? `<div class="chart-empty">No matching reference for these weights</div>` : state.referencePending ? `<div class="chart-empty">Loading reference…</div>` : state.referenceError ? `<div class="chart-empty">Reference distribution unavailable</div>` : distributionSvg(reference, result).replace('fill="#eff1f4"', 'fill="#252a34"').replace('font-size="15" fill="#252a34"', 'font-size="15" fill="#ffffff"');
@@ -593,7 +593,7 @@ async function initialize() {
   ]);
 }
 
-const jingweiInstallPrompt = "Install and launch JingWei from https://github.com/laleoarrow/jingwei-uveitis on this computer.\nFollow the README and use the launcher for my operating system. Verify that the offline web app opens.\nAsk me for the paths to my CFP and/or OCT weight files and configure them without renaming the files.\nIf I do not have weights yet, complete installation and explain how to add them later.";
+const jingweiInstallPrompt = "Install and launch JingWei from https://github.com/laleoarrow/jingwei-uveitis on this computer.\nFollow the README and use the launcher for my operating system. Verify that the offline web app opens.\nAsk me for the paths to my OCT and/or CFP weight files and configure them without renaming the files.\nIf I do not have weights yet, complete installation and explain how to add them later.";
 
 document.querySelectorAll('[data-copy-install]').forEach((button) => {
   const feedback = button.closest('.demo-install-options').querySelector('.demo-install-feedback');
