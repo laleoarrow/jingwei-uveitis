@@ -10,9 +10,9 @@
   <script>
     if (window.location.protocol === 'file:') window.location.replace('http://127.0.0.1:8765/');
   </script>
-  <link rel="stylesheet" href="/styles.css?v=20261013-status-colors">
+  <link rel="stylesheet" href="/styles.css?v=20261015-a4-preview">
   <style id="reportPrintMetadata"></style>
-  <script src="/app.js?v=20261013-status-labels" defer></script>
+  <script src="/app.js?v=20261015-oct-first" defer></script>
 </head>
 <body>
   <header class="app-header">
@@ -38,8 +38,8 @@
             <div class="section-heading image-heading">
               <h2 id="imageTitle">Image</h2>
               <div class="segmented" role="group" aria-label="Image modality">
-                <button type="button" class="selected" data-modality="cfp" aria-pressed="true">CFP</button>
-                <button type="button" data-modality="oct" aria-pressed="false">OCT</button>
+                <button type="button" class="selected" data-modality="oct" aria-pressed="true">OCT</button>
+                <button type="button" data-modality="cfp" aria-pressed="false">CFP</button>
               </div>
             </div>
             <input type="file" id="imageInput" accept=".jpg,.jpeg,.png,.tif,.tiff,.webp,image/jpeg,image/png,image/tiff,image/webp" class="visually-hidden">
@@ -108,9 +108,9 @@
           </section>
           <section class="settings-card">
             <h2>Model weights</h2>
-            <p class="settings-note" id="weightPathHint">Configure CFP, OCT, or both. Enter the path to your weight file; no renaming is needed.</p>
-            <div class="weight-setting"><div class="weight-heading"><h3>CFP</h3><span class="weight-state" id="cfpWeightState"></span></div><label><span class="visually-hidden">CFP checkpoint path</span><input id="cfpWeightPath" type="text" aria-describedby="weightPathHint" placeholder="Path to CFP weights (.pth or .pt)" spellcheck="false" autocomplete="off"></label></div>
+            <p class="settings-note" id="weightPathHint">Configure OCT, CFP, or both. Enter the path to your weight file; no renaming is needed.</p>
             <div class="weight-setting"><div class="weight-heading"><h3>OCT</h3><span class="weight-state" id="octWeightState"></span></div><label><span class="visually-hidden">OCT checkpoint path</span><input id="octWeightPath" type="text" aria-describedby="weightPathHint" placeholder="Path to OCT weights (.pth or .pt)" spellcheck="false" autocomplete="off"></label></div>
+            <div class="weight-setting"><div class="weight-heading"><h3>CFP</h3><span class="weight-state" id="cfpWeightState"></span></div><label><span class="visually-hidden">CFP checkpoint path</span><input id="cfpWeightPath" type="text" aria-describedby="weightPathHint" placeholder="Path to CFP weights (.pth or .pt)" spellcheck="false" autocomplete="off"></label></div>
             <label class="device-setting"><span>Processing device</span><select id="device"><option value="auto">Automatic</option><option value="cpu">CPU</option><option value="mps" disabled>Apple MPS</option></select></label>
             <p class="device-status" id="deviceStatus" role="status">Checking device availability…</p>
           </section>

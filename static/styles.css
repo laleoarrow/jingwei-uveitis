@@ -214,6 +214,10 @@ body:has(#reportView:not(.hidden)) { background: #f5f5f5; }
 .report-footer { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: auto; padding-top: 8mm; font-size: 9pt; line-height: 1.25; color: #333; }
 .report-preview-page { margin-left: auto; white-space: nowrap; }
 .report-empty { text-align: center; padding: 70px 0; color: #333; }
+@media screen and (min-width: 961px) {
+  .report-page { position: relative; }
+  .report-footer { position: absolute; left: 14mm; right: 14mm; bottom: 7mm; padding-top: 0; }
+}
 
 @media (min-width: 1440px) {
   .analysis-grid { gap: 76px; }

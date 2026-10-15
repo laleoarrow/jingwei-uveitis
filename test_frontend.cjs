@@ -94,9 +94,9 @@ function browser(demo = false, liveHealth = false) {
 
 function result(revision = 0) {
   return {
-    id: 'test-result', timestamp: '2026-01-01T00:00:00Z', modality: 'cfp',
+    id: 'test-result', timestamp: '2026-01-01T00:00:00Z', modality: 'oct',
     score: 1, probability: .7, positive: true,
-    snapshot: { patient: {}, institution: '', modality: 'cfp' },
+    snapshot: { patient: {}, institution: '', modality: 'oct' },
     model: { reference_compatible: false }, interpretation: null,
     interpretationSettingsRevision: revision,
   };
@@ -338,10 +338,8 @@ test('signed pixel IG report labels both directions with a relative scale and un
   assert.match(report, /src="data:image\/png;base64,HEATMAP" alt="Heatmap of the analyzed field"/);
   assert.match(report, /src="data:image\/png;base64,OVERLAY" alt="Overlay of the analyzed field"/);
   assert.match(report, /<span>−1<\/span><span class="report-heatmap-scale" aria-hidden="true">0<\/span><span>\+1<\/span>/);
-  assert.match(report, /Red shows contributions that increase the RVL Score; blue shows contributions that decrease it/);
-  assert.match(report, /zero is transparent in the overlay/);
+  assert.match(report, /Red and blue indicate positive and negative contributions to the RVL score, respectively\./);
   assert.match(report, /Relative scale for this image, not raw attribution units/);
-  assert.match(report, /model attribution, not lesion location/);
   assert.doesNotMatch(report, /Only positive contributions|<span>Low<\/span>|<span>High<\/span>/);
   assert.match(styles, /linear-gradient\(to right, #0000ff 0%, #ffffff 50%, #ff0000 100%\)/);
 });

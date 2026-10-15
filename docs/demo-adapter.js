@@ -70,7 +70,7 @@
       const body = JSON.parse(options.body || '{}');
       const image = await previewImage(body.image_base64, options.signal);
       if (route.pathname === '/api/preview') return image;
-      if (!['cfp', 'oct'].includes(body.modality)) throw new Error('Select CFP or OCT.');
+      if (!['cfp', 'oct'].includes(body.modality)) throw new Error('Select OCT or CFP.');
       // Presentation delay only; these values never depend on the selected pixels.
       await pause(900, options.signal);
       checkAbort(options.signal);

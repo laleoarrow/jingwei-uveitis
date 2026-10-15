@@ -1,6 +1,6 @@
 # JingWei · 精卫
 
-JingWei uses color fundus photography (CFP) or optical coherence tomography (OCT) images to predict retinal vascular leakage (RVL) in uveitis, as assessed by fundus fluorescein angiography (FFA).
+JingWei uses optical coherence tomography (OCT) or color fundus photography (CFP) images to predict retinal vascular leakage (RVL) in uveitis, as assessed by fundus fluorescein angiography (FFA).
 
 **[Online demo](https://laleoarrow.github.io/jingwei-uveitis/) · [Installation](#installation) · [Use](#use)**
 
@@ -30,14 +30,14 @@ The launcher installs Python 3.12 and the required packages in the application f
 
 You can open the interface without weights, but analysis requires them.
 
-Open **Settings**, enter the weight-file path for **CFP**, **OCT**, or both, and select **Save changes**. Keep the original filenames; quoted absolute paths are accepted. Leave unused modalities blank.
+Open **Settings**, enter the weight-file path for **OCT**, **CFP**, or both, and select **Save changes**. Keep the original filenames; quoted absolute paths are accepted. Leave unused modalities blank.
 
 Alternatively, these default locations are recognized automatically:
 
 | Input | File location |
 |---|---|
-| CFP | `weights/CFP.pth` |
 | OCT | `weights/OCT.pth` |
+| CFP | `weights/CFP.pth` |
 
 Leave **Processing device** on **Automatic** and **Include heatmap** and **AI-assisted interpretation** unchecked for the first assessment.
 
@@ -48,13 +48,13 @@ Give your preferred AI assistant the following prompt in a session with terminal
 ```text
 Install and launch JingWei from https://github.com/laleoarrow/jingwei-uveitis on this computer.
 Follow the README and use the launcher for my operating system. Verify that the offline web app opens.
-Ask me for the paths to my CFP and/or OCT weight files and configure them without renaming the files.
+Ask me for the paths to my OCT and/or CFP weight files and configure them without renaming the files.
 If I do not have weights yet, complete installation and explain how to add them later.
 ```
 
 ## Use
 
-1. Select **CFP** or **OCT** in **Analysis** and enter examination details if needed.
+1. Select **OCT** or **CFP** in **Analysis** and enter examination details if needed.
 2. Select **Browse files** to upload an image, or **Use sample** to test the setup. AI-generated samples run through the local model and require weights.
 3. Wait for the **RVL Score**, **predicted probability** and **analysis time**. The first assessment may take longer as the model loads.
 4. Select **Generate report**, then **Print / Save PDF**. For PDF export, choose **A4**, **100% scale**, and turn off browser **headers and footers**.
