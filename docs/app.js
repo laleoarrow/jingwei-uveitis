@@ -412,9 +412,9 @@ function distributionSvg(reference, result) {
   const f = (value) => Number(value).toFixed(2);
   let content = '';
   for (const tick of scoreTicks(min, max)) {
-    content += `<line x1="${f(x(tick.value))}" x2="${f(x(tick.value))}" y1="88" y2="${axis}" stroke="#e8ebef" stroke-width=".7"/><line x1="${f(x(tick.value))}" x2="${f(x(tick.value))}" y1="${axis}" y2="${axis + 5}" stroke="#aab2bd" stroke-width=".7"/><text x="${f(x(tick.value))}" y="${axis + 24}" text-anchor="middle" fill="#67717e" font-size="14">${escapeHtml(tick.label)}</text>`;
+    content += `<line x1="${f(x(tick.value))}" x2="${f(x(tick.value))}" y1="88" y2="${axis}" stroke="#e8ebef" stroke-width=".7"/><line x1="${f(x(tick.value))}" x2="${f(x(tick.value))}" y1="${axis}" y2="${axis + 5}" stroke="#78838D" stroke-width=".85"/><text x="${f(x(tick.value))}" y="${axis + 24}" text-anchor="middle" fill="#59635F" font-size="14">${escapeHtml(tick.label)}</text>`;
   }
-  content += `<line x1="${left}" x2="${width - right}" y1="${axis}" y2="${axis}" stroke="#aab2bd" stroke-width=".7"/><line x1="${left}" x2="${width - right}" y1="${baseline}" y2="${baseline}" stroke="#dce1e8" stroke-width=".7"/><line x1="${left}" x2="${width - right}" y1="${topAxis}" y2="${topAxis}" stroke="#e5e9ee" stroke-width=".7"/>`;
+  content += `<line x1="${left}" x2="${width - right}" y1="${axis}" y2="${axis}" stroke="#78838D" stroke-width=".85"/><line x1="${left}" x2="${width - right}" y1="${baseline}" y2="${baseline}" stroke="#dce1e8" stroke-width=".7"/><line x1="${left}" x2="${width - right}" y1="${topAxis}" y2="${topAxis}" stroke="#e5e9ee" stroke-width=".7"/>`;
   const probabilityCandidates = [.5, .01, .99, .1, .9, .001, .999];
   const selected = [];
   for (const probability of probabilityCandidates) {
@@ -424,33 +424,46 @@ function distributionSvg(reference, result) {
   }
   for (const tick of selected.sort((a, b) => a.position - b.position)) {
     const label = `${(tick.probability * 100).toLocaleString('en-US', { maximumFractionDigits: 1 })}%`;
-    content += `<line x1="${f(tick.position)}" x2="${f(tick.position)}" y1="${topAxis - 5}" y2="${topAxis}" stroke="#b5bdc8" stroke-width=".7"/><text x="${f(tick.position)}" y="${topAxis - 11}" text-anchor="middle" fill="#67717e" font-size="14">${label}</text>`;
+    content += `<line x1="${f(tick.position)}" x2="${f(tick.position)}" y1="${topAxis - 5}" y2="${topAxis}" stroke="#b5bdc8" stroke-width=".7"/><text x="${f(tick.position)}" y="${topAxis - 11}" text-anchor="middle" fill="#59635F" font-size="14">${label}</text>`;
   }
-  content += `<text x="${left + plotWidth / 2}" y="17" text-anchor="middle" font-size="15" fill="#67717e">Predicted probability</text>`;
+  content += `<text x="${left + plotWidth / 2}" y="17" text-anchor="middle" font-size="15" fill="#59635F">Predicted probability</text>`;
   for (const label of [1, 0]) {
     const group = reference.groups.find((item) => Number(item.label) === label);
     const positive = label === 1;
     const color = positive ? '#C75450' : '#2868B2';
     const sign = positive ? -1 : 1;
     if (!group || !group.n || !group.x?.length) {
-      content += `<text x="${left + plotWidth / 2}" y="${baseline + sign * 35}" text-anchor="middle" fill="#67717e" font-size="14">${positive ? 'No positive reference images' : 'No negative reference images'}</text>`;
+      content += `<text x="${left + plotWidth / 2}" y="${baseline + sign * 35}" text-anchor="middle" fill="#59635F" font-size="14">${positive ? 'No positive reference images' : 'No negative reference images'}</text>`;
       continue;
     }
     const points = group.x.map((value, index) => [x(value), baseline + sign * halfHeight * Math.max(0, Math.min(1, Number(group.density[index]) || 0))]);
     if (points.length === 1) {
       content += `<line x1="${f(points[0][0])}" x2="${f(points[0][0])}" y1="${baseline}" y2="${f(points[0][1])}" stroke="${color}" stroke-width="2"><title>RVL ${positive ? 'positive' : 'negative'}: n=${count(group.n)}, score ${number(group.median)}</title></line>`;
-      continue;
+    } else {
+      const path = `M${f(points[0][0])},${baseline} ` + points.map(([px, py]) => `L${f(px)},${f(py)}`).join(' ') + ` L${f(points.at(-1)[0])},${baseline}Z`;
+      content += `<path d="${path}" fill="${color}" fill-opacity=".52" stroke="${color}" stroke-opacity=".85" stroke-width=".75"><title>RVL ${positive ? 'positive' : 'negative'}: n=${count(group.n)}, median ${number(group.median)}, IQR ${number(group.q1)}–${number(group.q3)}</title></path>`;
     }
-    const path = `M${f(points[0][0])},${baseline} ` + points.map(([px, py]) => `L${f(px)},${f(py)}`).join(' ') + ` L${f(points.at(-1)[0])},${baseline}Z`;
-    content += `<path d="${path}" fill="${color}" fill-opacity=".62" stroke="${color}" stroke-opacity=".9" stroke-width="1"><title>RVL ${positive ? 'positive' : 'negative'}: n=${count(group.n)}, median ${number(group.median)}, IQR ${number(group.q1)}–${number(group.q3)}</title></path>`;
+    for (const key of ['q1', 'q3', 'median']) {
+      const value = group[key];
+      if (!Number.isFinite(value) || value < group.x[0]) continue;
+      const index = group.x.findIndex((score) => score >= value);
+      if (index < 0) continue;
+      let boundary = points[index][1];
+      if (index > 0) {
+        const fraction = (value - group.x[index - 1]) / (group.x[index] - group.x[index - 1]);
+        boundary = points[index - 1][1] + fraction * (boundary - points[index - 1][1]);
+      }
+      const median = key === 'median';
+      content += `<line x1="${f(x(value))}" x2="${f(x(value))}" y1="${baseline}" y2="${f(boundary)}" stroke="#292929" stroke-width="${median ? '1.15pt' : '0.7pt'}"${median ? '' : ' stroke-dasharray="2.67 2.13"'}><title>${median ? 'Median' : key === 'q1' ? '25th percentile' : '75th percentile'}: ${number(value)}</title></line>`;
+    }
   }
   content += `<line x1="${f(x(0))}" x2="${f(x(0))}" y1="88" y2="${axis}" stroke="#9aa4b1" stroke-width="1" stroke-dasharray="3 4"/>`;
   if (result) {
     const position = x(result.score);
     const tagWidth = 174, tagX = Math.max(left, Math.min(width - right - tagWidth, position - tagWidth / 2));
-    content += `<line x1="${f(position)}" x2="${f(position)}" y1="88" y2="${axis}" stroke="#252a34" stroke-width="3"/><circle cx="${f(position)}" cy="${baseline}" r="4.5" fill="#252a34" stroke="white" stroke-width="1.6"/><rect x="${f(tagX)}" y="57" width="${tagWidth}" height="27" rx="3" fill="#eff1f4"/><text x="${f(tagX + tagWidth / 2)}" y="76" text-anchor="middle" font-size="15" fill="#252a34">${number(result.score, 3)} · ${number(result.probability * 100, 1)}%</text>`;
+    content += `<line x1="${f(position)}" x2="${f(position)}" y1="88" y2="${axis}" stroke="#245448" stroke-width="2.4"/><circle cx="${f(position)}" cy="${baseline}" r="4.2" fill="#245448" stroke="white" stroke-width="1.4"/><rect x="${f(tagX)}" y="58" width="${tagWidth}" height="26" rx="3" fill="#EAF3EF" stroke="#245448" stroke-width=".9"/><text class="result-score-label" x="${f(tagX + tagWidth / 2)}" y="71" text-anchor="middle" dominant-baseline="central" font-size="14" fill="#245448"><tspan font-style="italic" style="font-synthesis:style">S<tspan baseline-shift="sub" font-size="70%">RVL</tspan></tspan><tspan> = ${number(result.score, 3)} (${number(result.probability * 100, 1)}%)</tspan></text>`;
   }
-  content += `<text x="${left + plotWidth / 2}" y="252" text-anchor="middle" font-size="15" fill="#67717e">RVL Score</text>`;
+  content += `<text x="${left + plotWidth / 2}" y="252" text-anchor="middle" font-size="15" fill="#59635F">RVL Score (<tspan font-style="italic" style="font-synthesis:style">S<tspan baseline-shift="sub" font-size="70%">RVL</tspan></tspan>)</text>`;
   return `<svg viewBox="0 0 ${width} 260" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${escapeHtml(`${cohortLabel(reference.cohort, reference.cohort_label)} RVL score reference distribution${result ? `, Score ${number(result.score, 3)}, probability ${number(result.probability * 100, 1)}%` : ''}`)}" font-family="Arial, PingFang SC, Microsoft YaHei, sans-serif">${content}</svg>`;
 }
 
@@ -484,7 +497,7 @@ function renderReport() {
     ? `<div class="report-heatmap-key" role="img" aria-label="Relative scale for this image, not raw attribution units: blue minus one, white zero, red plus one"><span>−1</span><span class="report-heatmap-scale" aria-hidden="true">0</span><span>+1</span><span class="report-heatmap-key-label">Relative scale for this image</span></div><p class="report-image-note">Red and blue indicate positive and negative contributions to the RVL score, respectively.</p>`
     : `<p class="report-image-note">${attribution ? 'No visible contributions in this heatmap.' : 'Heatmap unavailable'}</p>`;
   const imagePanel = (label, source, unavailable) => `<figure class="report-image"><div class="report-image-frame">${source ? `<img src="${e(source)}" alt="${e(label)} preview; not analyzed">` : `<span class="report-image-placeholder">${unavailable}</span>`}</div><figcaption>${label}</figcaption></figure>`;
-  const chart = !compatible ? `<div class="chart-empty">No matching reference for these weights</div>` : state.referencePending ? `<div class="chart-empty">Loading reference…</div>` : state.referenceError ? `<div class="chart-empty">Reference distribution unavailable</div>` : distributionSvg(reference, result).replace('fill="#eff1f4"', 'fill="#252a34"').replace('font-size="15" fill="#252a34"', 'font-size="15" fill="#ffffff"');
+  const chart = !compatible ? `<div class="chart-empty">No matching reference for these weights</div>` : state.referencePending ? `<div class="chart-empty">Loading reference…</div>` : state.referenceError ? `<div class="chart-empty">Reference distribution unavailable</div>` : distributionSvg(reference, result);
   const institution = (snapshot.institution || '').trim();
   const showInstitution = institution && institution.toLowerCase() !== 'jingwei system';
   const interpretation = result.interpretation || presetInterpretation(result);
@@ -509,7 +522,7 @@ function renderReport() {
     <div class="report-measurements${includeAttribution ? '' : ' report-measurements-with-image'}"><dl class="report-result-fields"><div><dt>RVL Score</dt><dd>${number(result.score, 3)}</dd></div><div><dt>Predicted probability</dt><dd>${number(result.probability * 100, 1)}<span>%</span></dd></div><div><dt>RVL prediction</dt><dd><strong class="report-prediction-value">${result.positive ? 'Positive' : 'Negative'}</strong></dd></div></dl>${includeAttribution ? '' : imagePanel(snapshot.aiGeneratedSample ? 'AI-generated sample' : 'Preview crop', reportImage, 'Analyzed image unavailable')}</div>
     ${includeAttribution ? `<h2 class="report-section-title">Contributing regions</h2><div class="report-images">${imagePanel(snapshot.aiGeneratedSample ? 'AI-generated sample' : 'Preview crop', reportImage, 'Analyzed image unavailable')}${imagePanel('Heatmap', pngImage(attribution?.heatmap), 'Heatmap unavailable')}${imagePanel('Overlay', pngImage(attribution?.overlay), 'Overlay unavailable')}</div>${imageLegend}` : ''}
     <h2 class="report-section-title">Reference distribution</h2>
-    <div class="report-distribution"><div class="report-chart-legend ${compatible ? '' : 'hidden'}"><span><i class="legend-dot positive"></i>RVL positive</span><span><i class="legend-dot negative"></i>RVL negative</span><span><i class="legend-individual"></i>Demo result</span></div>${chart}${compatible ? `<div class="report-reference-note">Reference cohort · ${e(referenceTitle)} (RVL assessed by FFA) · illustrative marker</div>` : ''}</div>
+    <div class="report-distribution"><div class="report-chart-legend ${compatible ? '' : 'hidden'}"><span><i class="legend-dot positive"></i>RVL positive</span><span><i class="legend-dot negative"></i>RVL negative</span><span><i class="legend-median"></i>Median</span><span><i class="legend-quartile"></i>25th / 75th percentile</span><span><i class="legend-individual"></i>Demo result</span></div>${chart}${compatible ? `<div class="report-reference-note">Reference cohort · ${e(referenceTitle)} · illustrative marker</div>` : ''}</div>
     <section class="report-interpretation"><h2 class="report-section-title">Interpretation${interpretationStatus ? `<span class="report-interpretation-status${interpretationPending ? ' report-interpretation-pending' : ''}">${e(interpretationStatus)}</span>` : ''}</h2><p class="report-interpretation-text">${e(interpretation.text)}</p></section>
     <div class="report-signature"><span>Reviewed by <i class="signature-line"></i></span><span>Review date <i class="signature-line"></i></span></div>
     <footer class="report-footer"><time datetime="${printedAt.toISOString()}">${e(printedLabel)}</time><span class="report-preview-page">Page 1 of 1</span></footer>`;

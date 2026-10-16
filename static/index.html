@@ -10,9 +10,9 @@
   <script>
     if (window.location.protocol === 'file:') window.location.replace('http://127.0.0.1:8765/');
   </script>
-  <link rel="stylesheet" href="/styles.css?v=20261015-a4-preview">
+  <link rel="stylesheet" href="/styles.css?v=20261016-report-reference">
   <style id="reportPrintMetadata"></style>
-  <script src="/app.js?v=20261015-oct-first" defer></script>
+  <script src="/app.js?v=20261016-report-reference" defer></script>
 </head>
 <body>
   <header class="app-header">
@@ -90,7 +90,7 @@
             <option value="prospective">UC-FAH-CQMU · Temporal validation</option>
             <option value="shanghai">EENT-FDU</option><option value="zhengzhou">FAH-ZZU</option><option value="jilin">OC-JLU2H</option><option value="proton">PROTON</option>
           </select></label></div>
-          <div class="chart-legend"><span><i class="legend-dot positive"></i><span>RVL positive</span></span><span><i class="legend-dot negative"></i><span>RVL negative</span></span><span id="individualLegend" class="hidden"><i class="legend-individual"></i><span>This image</span></span></div>
+          <div class="chart-legend"><span><i class="legend-dot positive"></i><span>RVL positive</span></span><span><i class="legend-dot negative"></i><span>RVL negative</span></span><span><i class="legend-median"></i><span>Median</span></span><span><i class="legend-quartile"></i><span>25th / 75th percentile</span></span><span id="individualLegend" class="hidden"><i class="legend-individual"></i><span>Current examination</span></span></div>
           <div id="distributionChart" class="distribution-chart" aria-live="polite"><div class="chart-empty">Loading reference…</div></div>
         </section>
       </section>
