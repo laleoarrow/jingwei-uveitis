@@ -8,7 +8,7 @@ import shutil
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "static"
 DOCS = ROOT / "docs"
-VERSION = "workbench-demo-23"
+VERSION = "workbench-demo-24"
 DOWNLOAD_URL = "https://github.com/laleoarrow/jingwei-uveitis/archive/refs/heads/main.zip"
 WEIGHTS_URL = "https://pan.baidu.com/s/1r7gfecgxxbtCQnV0FmZlSg?pwd=7a7c"
 INSTALL_URL = "https://github.com/laleoarrow/jingwei-uveitis#installation"
@@ -77,7 +77,7 @@ html = replace_once(html, '    <main>\n', f'''    <main>
       </aside>
 ''')
 html = replace_once(html, 'accept=".jpg,.jpeg,.png,.tif,.tiff,.webp,image/jpeg,image/png,image/tiff,image/webp"', 'accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"')
-html = html.replace('<span>This image</span>', '<span>Demo result</span>')
+html = html.replace('<span>Current examination</span>', '<span>Demo result</span>')
 html = replace_section(html, '      <section id="settingsView"', '      <section id="reportView"', f'''      <section id="settingsView" class="view hidden">
         <div class="page-heading"><h1>Settings</h1></div>
         <section class="settings-card demo-local-settings"><h2>Offline use</h2><p>Download and unzip the app, then double-click <strong>start.command</strong> on macOS or <strong>start.bat</strong> on Windows. The launcher installs the environment and opens JingWei. Model weights are supplied separately.</p>{download_actions()}</section>
@@ -134,11 +134,11 @@ app = app.replace('src="/jingwei-wordmark.svg', 'src="jingwei-wordmark.svg')
 app = app.replace('>Model input</button>', '>Preview crop</button>')
 app = app.replace("imagePanel(snapshot.aiGeneratedSample ? 'AI-generated sample' : 'Model input'", "imagePanel(snapshot.aiGeneratedSample ? 'AI-generated sample' : 'Preview crop'")
 app = app.replace('>Clinical report</span>', '>DEMO / illustrative output</span>')
-app = replace_once(app, '>Model-based RVL prediction in uveitis</p>', '>Illustrative result — not calculated from your image</p>')
+app = replace_once(app, '<h1 class="report-title">Retinal Vascular Leakage Assessment</h1>', '<h1 class="report-title">Retinal Vascular Leakage Assessment</h1><p class="report-subtitle">Illustrative result — not calculated from your image</p>')
 app = app.replace('<span>Analyzed: ', '<span>Demo created: ')
 app = app.replace(' of the analyzed field', ' preview; not analyzed')
-app = app.replace('This image</span>', 'Demo result</span>')
-app = replace_once(app, 'Reference cohort · ${e(referenceTitle)} (RVL assessed by FFA)', 'Reference cohort · ${e(referenceTitle)} (RVL assessed by FFA) · illustrative marker')
+app = app.replace('Current examination</span>', 'Demo result</span>')
+app = replace_once(app, 'Reference cohort · ${e(referenceTitle)}', 'Reference cohort · ${e(referenceTitle)} · illustrative marker')
 app = replace_section(app, '    // Licensed local faces are optional', '    if (state.result !== result', '    await document.fonts.ready;\n')
 app = replace_once(app, '\ninitialize();', '\nconst jingweiInstallPrompt = ' + json.dumps(install_prompt.group(1), ensure_ascii=True) + ';\n' + '''
 document.querySelectorAll('[data-copy-install]').forEach((button) => {
