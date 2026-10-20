@@ -1,6 +1,4 @@
-<img src="docs/assets/jingwei-logo.svg" align="right" width="170" height="170" alt="JingWei bird logo in a green circular frame" />
-
-# JingWei · 精卫
+# JingWei · 精卫 <img src="docs/assets/jingwei-logo.svg" align="right" width="170" height="170" alt="JingWei bird logo in a green circular frame" />
 
 [![Checks](https://img.shields.io/github/actions/workflow/status/laleoarrow/jingwei-uveitis/checks.yml?branch=main&style=for-the-badge&label=Checks&labelColor=334B49)](https://github.com/laleoarrow/jingwei-uveitis/actions/workflows/checks.yml) [![Python 3.12](https://img.shields.io/badge/Python-3.12-2E7D6A?style=for-the-badge&logo=python&logoColor=white&labelColor=334B49)](#installation) [![Inputs OCT and CFP](https://img.shields.io/badge/Inputs-OCT%20%7C%20CFP-397F73?style=for-the-badge&labelColor=334B49)](#use)<br />[![Inference Local](https://img.shields.io/badge/Inference-Local-27877D?style=for-the-badge&labelColor=334B49)](#installation) [![Demo Illustrative](https://img.shields.io/badge/Demo-Illustrative-4C9386?style=for-the-badge&labelColor=334B49)](https://laleoarrow.github.io/jingwei-uveitis/)
 
