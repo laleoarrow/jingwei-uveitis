@@ -8,7 +8,7 @@ import shutil
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "static"
 DOCS = ROOT / "docs"
-VERSION = "workbench-demo-27"
+VERSION = "workbench-demo-28"
 DOWNLOAD_URL = "https://github.com/laleoarrow/jingwei-uveitis/archive/refs/heads/main.zip"
 WEIGHTS_URL = "https://zenodo.org/records/23503796"
 INSTALL_URL = "https://github.com/laleoarrow/jingwei-uveitis#installation"
@@ -79,6 +79,8 @@ html = replace_once(html, '    <main>\n', f'''    <main>
       </aside>
 ''')
 html = replace_once(html, 'accept=".jpg,.jpeg,.png,.tif,.tiff,.webp,image/jpeg,image/png,image/tiff,image/webp"', 'accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"')
+html = replace_once(html, '<div class="sample-action"><button class="text-button" id="useSample" type="button">Use sample</button></div>', '''<div class="sample-action"><button class="text-button" id="useSample" type="button" aria-describedby="demoSampleNote">Use sample</button></div>
+            <p class="demo-sample-note" id="demoSampleNote">Sample images are AI-generated and do not represent real patient data. For illustration only.</p>''')
 html = html.replace('<span>Current examination</span>', '<span>Demo result</span>')
 html = replace_section(html, '      <section id="settingsView"', '      <section id="reportView"', f'''      <section id="settingsView" class="view hidden">
         <div class="page-heading"><h1>Settings</h1></div>
