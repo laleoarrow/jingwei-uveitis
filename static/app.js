@@ -11,7 +11,7 @@ const DEFAULTS = {
 const state = {
   modality: 'oct', settings: null, health: null, result: null, reference: null,
   referenceError: '', referencePending: false, predictionPending: false, samplePending: false,
-  predictionSequence: 0, referenceSequence: 0, predictionController: null,
+  predictionSequence: 0, referenceSequence: 0, predictionController: null, sampleController: null,
   predictionTimer: null, predictionStartedAt: null,
   previewUrl: null, originalPreview: null, previewMode: 'original', view: 'workspace',
   settingsRevision: 0, settingsPending: false, clearLlmApiKey: false,
@@ -295,6 +295,9 @@ function invalidatePrediction(clearImage = true) {
   cancelInterpretation();
   stopPredictionTimer();
   state.predictionSequence += 1;
+  state.sampleController?.abort();
+  state.sampleController = null;
+  state.samplePending = false;
   state.predictionController?.abort();
   state.predictionController = null;
   state.predictionPending = false;
@@ -354,31 +357,53 @@ function showPreview(mode) {
 }
 
 async function useSample() {
-  const button = $('useSample');
   if (state.samplePending || state.predictionPending) return;
   const sequence = state.predictionSequence;
   const modality = state.modality;
   const includeHeatmap = $('includeHeatmap').checked;
+  const controller = new AbortController();
+  state.sampleController = controller;
   state.samplePending = true;
-  button.disabled = true;
+  setNotice('predictionError', '');
+  renderResult();
+  const image = new Image();
+  const cancelled = new Promise((resolve, reject) => {
+    controller.signal.addEventListener('abort', () => {
+      image.src = '';
+      reject(controller.signal.reason);
+    }, { once: true });
+  });
+  const timeout = setTimeout(() => controller.abort(), 15000);
   try {
-    const image = new Image();
     image.src = `assets/sample-${modality}-generated.png`;
-    await image.decode();
+    await Promise.race([image.decode(), cancelled]);
     const canvas = document.createElement('canvas');
     canvas.width = image.naturalWidth;
     canvas.height = image.naturalHeight;
     canvas.getContext('2d').drawImage(image, 0, 0);
-    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+    const blob = await Promise.race([new Promise((resolve) => canvas.toBlob(resolve, 'image/png')), cancelled]);
     if (!blob) throw new Error('Could not load the sample.');
     const file = new File([blob], `AI-generated-${modality.toUpperCase()}-sample.png`, { type: 'image/png' });
     file.jingweiGeneratedSample = true;
-    if (sequence === state.predictionSequence) await analyzeFile(file, includeHeatmap);
+    clearTimeout(timeout);
+    if (sequence === state.predictionSequence && !controller.signal.aborted) {
+      state.sampleController = null;
+      state.samplePending = false;
+      await analyzeFile(file, includeHeatmap);
+    }
   } catch {
-    if (sequence === state.predictionSequence) setNotice('predictionError', 'The sample could not load. Choose an image or try again.', true);
+    if (sequence === state.predictionSequence) {
+      setNotice('predictionError', controller.signal.aborted
+        ? 'The sample took too long to load. Check your connection and try again.'
+        : 'The sample could not load. Choose an image or try again.', true);
+    }
   } finally {
-    state.samplePending = false;
-    button.disabled = state.predictionPending;
+    clearTimeout(timeout);
+    if (state.sampleController === controller) {
+      state.sampleController = null;
+      state.samplePending = false;
+      renderResult();
+    }
   }
 }
 
@@ -474,6 +499,7 @@ function renderResult() {
   const result = state.result;
   const pending = state.predictionPending;
   $('useSample').disabled = state.samplePending || pending;
+  $('useSample').textContent = state.samplePending ? 'Loading sample…' : 'Use sample';
   const hasError = !$('predictionError').classList.contains('hidden');
   const showAnalysisTime = !pending && Number.isFinite(result?.analysisElapsedSeconds);
   $('resultStatus').textContent = hasError ? 'Analysis failed' : showAnalysisTime ? `Analysis time · ${result.analysisElapsedSeconds.toFixed(2)} s` : '';
@@ -749,6 +775,9 @@ async function initialize() {
   $('applyPatient').addEventListener('click', () => { if (!state.result) return; state.result.snapshot.patient = patientInformation(); updatePatientDirty(); });
   populateSettings();
   renderResult();
+  document.querySelector('.app-header').inert = false;
+  document.querySelector('.app-shell').inert = false;
+  $('startupNotice').classList.add('hidden');
   startHealthPolling();
   await Promise.allSettled([
     api('/api/settings').then((settings) => { state.settings = settings; populateSettings(); renderHealth(); }).catch(() => setNotice('serviceNotice', 'Could not load settings. Start the service and refresh.', true)),

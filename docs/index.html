@@ -8,12 +8,12 @@
   <link rel="icon" href="data:,">
   <title>JingWei System · Demo</title>
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; connect-src 'none'; font-src 'none'; object-src 'none'; base-uri 'self'; form-action 'none'">
-  <link rel="stylesheet" href="styles.css?v=workbench-demo-24">
+  <link rel="stylesheet" href="styles.css?v=workbench-demo-25">
   <style id="reportPrintMetadata"></style>
-  <link rel="stylesheet" href="demo.css?v=workbench-demo-24">
-  <script src="reference-data.js?v=workbench-demo-24" defer></script>
-  <script src="demo-adapter.js?v=workbench-demo-24" defer></script>
-  <script src="app.js?v=workbench-demo-24" defer></script>
+  <link rel="stylesheet" href="demo.css?v=workbench-demo-25">
+  <script src="reference-data.js?v=workbench-demo-25" defer></script>
+  <script src="demo-adapter.js?v=workbench-demo-25" defer></script>
+  <script src="app.js?v=workbench-demo-25" defer></script>
 </head>
 <body>
   <dialog id="demoEntryDialog" class="demo-entry-dialog" aria-labelledby="demoEntryTitle" aria-describedby="demoEntryDescription">
@@ -38,7 +38,8 @@
     </div>
     <button class="button button-secondary demo-entry-continue" id="continueDemo" type="button" autofocus>Continue to demo</button>
   </dialog>
-  <header class="app-header">
+  <div class="notice startup-notice" id="startupNotice" role="status">Loading JingWei… If this continues, <a href="">reload the page</a>.</div>
+  <header class="app-header" inert>
     <a class="brand" href="#workspace" aria-label="JingWei home"><img class="brand-wordmark" src="jingwei-wordmark.svg?v=20261010" alt="JingWei"> <small class="brand-companion">精卫</small></a>
     <nav aria-label="Main navigation">
       <button class="nav-item active" data-view="workspace" type="button">Analysis</button>
@@ -48,7 +49,7 @@
       <span class="connection"><span class="status-dot" id="connectionDot"></span><span id="connectionText">Connected</span></span>
     </div>
   </header>
-  <div class="app-shell">
+  <div class="app-shell" inert>
     <main>
       <aside class="demo-notice" aria-label="Demo notice">
         <span class="demo-notice-badge">Demo only</span>

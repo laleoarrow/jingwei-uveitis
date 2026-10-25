@@ -38,6 +38,7 @@ function browser(demo = false, liveHealth = false) {
   const context = vm.createContext({
     document: {
       getElementById: element,
+      addEventListener() {},
       querySelectorAll: () => [],
       querySelector: element,
       createElement(tag) {
@@ -52,6 +53,7 @@ function browser(demo = false, liveHealth = false) {
     }, AbortController, performance, Image, File,
     window: {
       scrollTo() {},
+      addEventListener() {},
       jingweiDemoInterpretation: 'Illustrative result — not calculated from your image.',
       jingweiDemoApi(path, options) {
         return new Promise((resolve) => requests.push({ path, options, respond: resolve }));
@@ -81,10 +83,10 @@ function browser(demo = false, liveHealth = false) {
   const app = vm.runInContext(browserSource + `
     const actualRenderResult = renderResult;
     readFile = async () => 'data:image/png;base64,AA==';
-    showPreview = renderResult = updatePatientDirty = populateSettings = () => {};
+    showPreview = updatePatientDirty = populateSettings = () => {};
     ${liveHealth ? '' : 'refreshHealth = async () => {};'}
     ({ state, saveSettings: typeof saveSettings === 'function' ? saveSettings : null,
-       ensureInterpretation, analyzeFile, renderReport, useSample, invalidatePrediction,
+       ensureInterpretation, analyzeFile, renderReport, useSample, invalidatePrediction, initialize,
        refreshHealth, renderHealth, setView,
        renderResult: actualRenderResult,
        startHealthPolling: typeof startHealthPolling === 'function' ? startHealthPolling : null });
@@ -408,6 +410,99 @@ for (const enabled of [true, false]) {
   });
 }
 
+for (const demo of [false, true]) {
+  const appName = demo ? 'demo' : 'offline app';
+  test(`${appName} exposes controls only after startup handlers are installed`, async () => {
+    const html = readFileSync(join(__dirname, demo ? 'docs/index.html' : 'static/index.html'), 'utf8');
+    assert.match(html, /id="startupNotice"[^>]*>Loading JingWei/);
+    assert.match(html, /<header class="app-header" inert>/);
+    assert.match(html, /<div class="app-shell" inert>/);
+    const app = browser(demo);
+    app.element('.app-header').inert = true;
+    app.element('.app-shell').inert = true;
+    let hidden = false;
+    app.element('startupNotice').classList.add = (name) => { hidden = name === 'hidden'; };
+    const initializing = app.initialize();
+    assert.equal(app.element('.app-header').inert, false);
+    assert.equal(app.element('.app-shell').inert, false);
+    assert.equal(hidden, true);
+    assert.equal(app.element('useSample').disabled, false);
+    requestsFor(app, '/api/settings')[0].respond({});
+    app.requests.find((request) => request.path.startsWith('/api/reference?')).respond({ modality: 'oct', cohort: '', groups: [] });
+    await initializing;
+  });
+
+  test(`${appName} sample loading gives immediate feedback`, async () => {
+    const app = browser(demo);
+    const loading = app.useSample();
+    assert.equal(app.element('useSample').textContent, 'Loading sample…');
+    assert.equal(app.element('useSample').disabled, true);
+    app.invalidatePrediction();
+    await loading;
+    assert.equal(app.element('useSample').textContent, 'Use sample');
+    assert.equal(app.element('useSample').disabled, false);
+    assert.equal(app.timeouts.size, 0);
+  });
+
+  for (const phase of ['decoding', 'encoding']) {
+    test(`${appName} cancelled sample ${phase} cannot block or unlock a newer sample`, async () => {
+      const app = browser(demo);
+      const first = app.useSample();
+      if (phase === 'encoding') {
+        app.images[0].finishDecode();
+        await tick();
+      }
+      app.invalidatePrediction();
+      assert.equal(app.element('useSample').disabled, false);
+      const next = app.useSample();
+      await first;
+      assert.equal(app.element('useSample').disabled, true);
+      assert.equal(app.element('useSample').textContent, 'Loading sample…');
+      if (phase === 'decoding') app.images[0].finishDecode();
+      else app.canvases[0].finishBlob();
+      await tick();
+      assert.equal(requestsFor(app, '/api/predict').length, 0);
+      app.images[1].finishDecode();
+      await tick();
+      app.canvases.at(-1).finishBlob();
+      await tick();
+      assert.equal(requestsFor(app, '/api/predict').length, 1);
+      requestsFor(app, '/api/predict')[0].respond(result());
+      await next;
+      assert.equal(app.state.result.snapshot.aiGeneratedSample, true);
+      assert.equal(app.element('useSample').disabled, false);
+      assert.equal(app.element('predictionError').textContent, '');
+    });
+
+    test(`${appName} sample timeout during ${phase} allows a successful retry`, async () => {
+      const app = browser(demo);
+      const loading = app.useSample();
+      if (phase === 'encoding') {
+        app.images[0].finishDecode();
+        await tick();
+      }
+      const timeout = [...app.timeouts.values()].find((timer) => timer.delay === 15000);
+      assert.ok(timeout, 'Sample preparation has a bounded wait');
+      timeout.handler();
+      await loading;
+      assert.equal(app.element('useSample').disabled, false);
+      assert.equal(app.element('useSample').textContent, 'Use sample');
+      assert.match(app.element('predictionError').textContent, /try again/i);
+      assert.equal(app.timeouts.size, 0);
+      const retry = app.useSample();
+      assert.equal(app.element('predictionError').textContent, '');
+      app.images[1].finishDecode();
+      await tick();
+      app.canvases.at(-1).finishBlob();
+      await tick();
+      requestsFor(app, '/api/predict')[0].respond(result());
+      await retry;
+      assert.equal(app.state.result.snapshot.aiGeneratedSample, true);
+      assert.equal(app.element('useSample').disabled, false);
+    });
+  }
+}
+
 for (const modality of ['cfp', 'oct']) {
   test(`${modality.toUpperCase()} sample uses normal inference and retains its generated-image label`, async () => {
     const app = browser();
@@ -590,6 +685,28 @@ for (const modality of ['cfp', 'oct']) {
   });
 }
 
+for (const missing of [null, 'adapter', 'references']) {
+  test(`demo startup ${missing ? `offers reload when ${missing} fails to load` : 'opens only when its scripts are ready'}`, () => {
+    const demoSource = readFileSync(join(__dirname, 'docs/app.js'), 'utf8');
+    const startup = demoSource.slice(demoSource.indexOf('const demoEntryDialog = '));
+    const notice = { innerHTML: '' };
+    let initialized = false, opened = false;
+    const dialog = { showModal() { opened = true; }, close() {} };
+    const window = {};
+    if (missing !== 'adapter') window.jingweiDemoApi = () => {};
+    if (missing !== 'references') window.JINGWEI_DEMO_REFERENCES = {};
+    vm.runInNewContext(startup, {
+      window,
+      document: { getElementById: (id) => id === 'demoEntryDialog' ? dialog : { addEventListener() {} } },
+      $: (id) => { assert.equal(id, 'startupNotice'); return notice; },
+      initialize() { initialized = true; },
+    });
+    assert.equal(initialized, missing === null);
+    assert.equal(opened, missing === null);
+    if (missing) assert.match(notice.innerHTML, /<a href="">Reload the page<\/a>/);
+  });
+}
+
 function demoInstallButtons(clipboard) {
   const demoSource = readFileSync(join(__dirname, 'docs/app.js'), 'utf8');
   const handlers = demoSource.slice(demoSource.indexOf('const jingweiInstallPrompt = '), demoSource.indexOf('const demoEntryDialog = '));
@@ -653,4 +770,72 @@ test('browsers without clipboard access offer manual copy rather than false succ
   assert.equal(buttons[0].textContent, 'Install with LLM');
   assert.equal(buttons[0].manualCopy.hidden, false);
   assert.equal(buttons[0].disabled, false);
+});
+
+function demoAdapterBrowser() {
+  const images = [], timers = [], revoked = [];
+  class DemoImage {
+    constructor() { this.naturalWidth = 1600; this.naturalHeight = 900; images.push(this); }
+    decode() { return new Promise((resolve) => { this.finishDecode = resolve; }); }
+  }
+  class DemoURL extends URL {
+    static createObjectURL() { return 'blob:demo-image'; }
+    static revokeObjectURL(url) { revoked.push(url); }
+  }
+  const window = {};
+  vm.runInNewContext(readFileSync(join(__dirname, 'docs/demo-adapter.js'), 'utf8'), {
+    window, Image: DemoImage, URL: DemoURL, Blob, DOMException, atob,
+    crypto: { randomUUID: () => '12345678-1234-1234-1234-123456789abc' },
+    document: {
+      createElement(tag) {
+        assert.equal(tag, 'canvas');
+        return {
+          getContext: () => ({ drawImage() {} }),
+          toDataURL: () => 'data:image/png;base64,cHJldmlldw==',
+        };
+      },
+    },
+    setTimeout(handler, delay) { timers.push({ handler, delay }); return timers.length; },
+    clearTimeout() {},
+  });
+  return { api: window.jingweiDemoApi, images, timers, revoked };
+}
+
+for (const modality of ['oct', 'cfp']) {
+  test(`real demo adapter returns the fixed ${modality.toUpperCase()} result as soon as the image is decoded`, async () => {
+    const demo = demoAdapterBrowser();
+    let prediction;
+    const pending = demo.api('/api/predict', {
+      body: JSON.stringify({ modality, image_base64: 'iVBORw==' }),
+    }).then((value) => { prediction = value; });
+    assert.equal(prediction, undefined);
+    demo.images[0].finishDecode();
+    await tick();
+    assert.ok(prediction, 'Decoded demo images must not wait for an artificial presentation timer');
+    await pending;
+    assert.equal(demo.timers.length, 0);
+    assert.equal(prediction.modality, modality);
+    assert.equal(prediction.score, 1.25);
+    assert.equal(prediction.probability, 1 / (1 + Math.exp(-1.25)));
+    assert.equal(prediction.model.name, 'Fixed illustrative example');
+    assert.equal(prediction.attribution.status, 'disabled');
+    assert.deepEqual(demo.revoked, ['blob:demo-image']);
+    const interpretation = await demo.api('/api/interpret');
+    assert.match(interpretation.text, /not calculated from your image/);
+    assert.match(interpretation.text, /no image analysis was performed/);
+  });
+}
+
+test('real demo adapter discards a request cancelled while its image is decoding', async () => {
+  const demo = demoAdapterBrowser();
+  const controller = new AbortController();
+  const pending = demo.api('/api/predict', {
+    signal: controller.signal,
+    body: JSON.stringify({ modality: 'oct', image_base64: 'iVBORw==' }),
+  });
+  controller.abort();
+  demo.images[0].finishDecode();
+  await assert.rejects(pending, { name: 'AbortError' });
+  assert.deepEqual(demo.revoked, ['blob:demo-image']);
+  assert.equal(demo.timers.length, 0);
 });

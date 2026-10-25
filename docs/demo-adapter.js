@@ -8,15 +8,6 @@
   const settings = Object.freeze({ cfp_weight_path: '', oct_weight_path: '', institution: 'JingWei System', include_heatmap: false, device: 'auto', llm_enabled: false, llm_base_url: '', llm_model: '', llm_api_key_set: false });
   const checkAbort = (signal) => { if (signal?.aborted) throw new DOMException('Cancelled', 'AbortError'); };
 
-  function pause(milliseconds, signal) {
-    checkAbort(signal);
-    return new Promise((resolve, reject) => {
-      const abort = () => { clearTimeout(timer); reject(new DOMException('Cancelled', 'AbortError')); };
-      const timer = setTimeout(() => { signal?.removeEventListener('abort', abort); resolve(); }, milliseconds);
-      signal?.addEventListener('abort', abort, { once: true });
-    });
-  }
-
   function canvasImage(image, cropped = false) {
     const canvas = document.createElement('canvas');
     const width = image.naturalWidth, height = image.naturalHeight;
@@ -71,8 +62,6 @@
       const image = await previewImage(body.image_base64, options.signal);
       if (route.pathname === '/api/preview') return image;
       if (!['cfp', 'oct'].includes(body.modality)) throw new Error('Select OCT or CFP.');
-      // Presentation delay only; these values never depend on the selected pixels.
-      await pause(900, options.signal);
       checkAbort(options.signal);
       return {
         id: `DEMO-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,

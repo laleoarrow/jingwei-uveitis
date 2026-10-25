@@ -87,6 +87,8 @@ h3 { margin: 0; font-size: 14px; font-weight: 550; }
 .result-footer .button { min-width: 135px; }
 .notice { padding: 10px 13px; color: #6f7887; background: #f5f7fa; font-size: 14px; border-radius: 5px; margin: 12px 0; line-height: 1.65; }
 .error-notice { background: #fbf5f3; color: #a06456; }
+.startup-notice { width: min(1080px, calc(100% - 44px)); margin: 16px auto 0; border-left: 3px solid #497b65; background: #f3f7f4; color: #245448; }
+.startup-notice a { text-decoration: underline; text-underline-offset: 3px; }
 .patient-card { border-bottom: 1px solid var(--line); border-top: 1px solid var(--line); margin-top: 34px; }
 .patient-card summary { list-style: none; display: flex; align-items: center; gap: 12px; padding: 18px 0; cursor: pointer; font-size: 14px; color: #646b76; }
 .patient-card summary::-webkit-details-marker { display: none; }

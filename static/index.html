@@ -10,12 +10,13 @@
   <script>
     if (window.location.protocol === 'file:') window.location.replace('http://127.0.0.1:8765/');
   </script>
-  <link rel="stylesheet" href="/styles.css?v=20261016-report-reference">
+  <link rel="stylesheet" href="/styles.css?v=20261025-sample-loading">
   <style id="reportPrintMetadata"></style>
-  <script src="/app.js?v=20261016-report-reference" defer></script>
+  <script src="/app.js?v=20261025-sample-loading" defer></script>
 </head>
 <body>
-  <header class="app-header">
+  <div class="notice startup-notice" id="startupNotice" role="status">Loading JingWei… If this continues, <a href="">reload the page</a>.</div>
+  <header class="app-header" inert>
     <a class="brand" href="#workspace" aria-label="JingWei home"><img class="brand-wordmark" src="/jingwei-wordmark.svg?v=20261010" alt="JingWei"> <small class="brand-companion">精卫</small></a>
     <nav aria-label="Main navigation">
       <button class="nav-item active" data-view="workspace" type="button">Analysis</button>
@@ -25,7 +26,7 @@
       <span class="connection"><span class="status-dot" id="connectionDot"></span><span id="connectionText">Connected</span></span>
     </div>
   </header>
-  <div class="app-shell">
+  <div class="app-shell" inert>
     <main>
       <section id="workspaceView" class="view">
         <div class="page-heading">
