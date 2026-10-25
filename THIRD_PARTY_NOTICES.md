@@ -1,10 +1,9 @@
 # Third-party materials and licensing
 
-The project has not yet specified a license for its original JingWei application
-code or the locally authored attribution implementation. Public source access
-alone does not constitute a general reuse or redistribution license. The
-notices below apply to their named components and do not assign a license to
-the whole application.
+The JingWei repository is distributed under the Creative Commons
+Attribution–NonCommercial 4.0 International licence (CC BY-NC 4.0).
+Separately identified third-party materials remain subject to their original
+notices and licences. See [LICENSE](LICENSE) for the repository licence.
 
 ## Bundled scientific code
 
