@@ -17,7 +17,6 @@
 .demo-download-actions .button { width: 100%; min-height: 46px; padding: 11px 12px; }
 .demo-download-actions .demo-setup-link { text-decoration: none; }
 .demo-weight-download { display: grid; gap: 6px; }
-.demo-weight-code { color: #365b4e; font-size: 12px; line-height: 1.5; text-align: center; }
 .demo-install-options { min-width: 0; }
 .demo-install-options .demo-install-feedback { margin: 10px 0 0; font-size: 13px; line-height: 1.5; color: #365b4e; }
 .demo-install-feedback a { color: #245448; text-decoration: underline; text-underline-offset: 3px; }

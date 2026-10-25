@@ -8,9 +8,9 @@ import shutil
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "static"
 DOCS = ROOT / "docs"
-VERSION = "workbench-demo-26"
+VERSION = "workbench-demo-27"
 DOWNLOAD_URL = "https://github.com/laleoarrow/jingwei-uveitis/archive/refs/heads/main.zip"
-WEIGHTS_URL = "https://pan.baidu.com/s/1r7gfecgxxbtCQnV0FmZlSg?pwd=7a7c"
+WEIGHTS_URL = "https://zenodo.org/records/23503796"
 INSTALL_URL = "https://github.com/laleoarrow/jingwei-uveitis#installation"
 LLM_INSTALL_URL = "https://github.com/laleoarrow/jingwei-uveitis#install-with-llm"
 
@@ -27,7 +27,6 @@ def download_actions():
         <a class="button button-primary" href="{DOWNLOAD_URL}">Download offline app <span aria-hidden="true">↓</span></a>
         <div class="demo-weight-download">
           <a class="button button-secondary" href="{WEIGHTS_URL}" target="_blank" rel="noopener">Download model weights <span aria-hidden="true">↗</span></a>
-          <span class="demo-weight-code">Access code: <strong>7a7c</strong></span>
         </div>
         <button class="button button-secondary" type="button" data-copy-install title="Copy installation instructions for your AI assistant">Install with LLM</button>
         <a class="button button-secondary demo-setup-link" href="{INSTALL_URL}" target="_blank" rel="noopener">Installation guide <span aria-hidden="true">↗</span></a>
@@ -75,7 +74,7 @@ html = replace_once(html, '<body>\n', f'''<body>
 html = replace_once(html, '    <main>\n', f'''    <main>
       <aside class="demo-notice" aria-label="Demo notice">
         <span class="demo-notice-badge">Demo only</span>
-        <div class="demo-notice-copy"><strong>No image analysis is performed.</strong><span>Results are fixed examples, not predictions from your image.</span></div>
+        <div class="demo-notice-copy"><strong>No actual image analysis is performed. Illustration only.</strong><span>Results are fixed examples, not predictions from your image; for real prediction for RVL, please install JingWei on your device</span></div>
         <div class="demo-download">{download_actions()}</div>
       </aside>
 ''')
