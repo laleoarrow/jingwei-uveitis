@@ -8,8 +8,8 @@ import shutil
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "static"
 DOCS = ROOT / "docs"
-VERSION = "workbench-demo-29"
-DOWNLOAD_URL = "https://github.com/laleoarrow/jingwei-uveitis/archive/refs/heads/main.zip"
+VERSION = "workbench-demo-32"
+DOWNLOAD_URL = "https://github.com/laleoarrow/jingwei-uveitis/releases/download/v1.0.0/JingWei-v1.0.0.zip"
 WEIGHTS_URL = "https://github.com/laleoarrow/jingwei-uveitis#3-configure-the-weights"
 INSTALL_URL = "https://github.com/laleoarrow/jingwei-uveitis#installation"
 LLM_INSTALL_URL = "https://github.com/laleoarrow/jingwei-uveitis#install-with-llm"
