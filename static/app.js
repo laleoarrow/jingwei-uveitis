@@ -373,7 +373,7 @@ async function useSample() {
       reject(controller.signal.reason);
     }, { once: true });
   });
-  const timeout = setTimeout(() => controller.abort(), 15000);
+  const timeout = setTimeout(() => controller.abort(), 30000);
   try {
     image.src = `assets/sample-${modality}-generated.png`;
     await Promise.race([image.decode(), cancelled]);

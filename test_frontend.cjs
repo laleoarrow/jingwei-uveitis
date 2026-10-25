@@ -417,6 +417,11 @@ for (const demo of [false, true]) {
     assert.match(html, /id="startupNotice"[^>]*>Loading JingWei/);
     assert.match(html, /<header class="app-header" inert>/);
     assert.match(html, /<div class="app-shell" inert>/);
+    if (demo) {
+      for (const modality of ['oct', 'cfp']) {
+        assert.ok(html.includes(`<link rel="preload" as="image" href="assets/sample-${modality}-generated.png" fetchpriority="low">`));
+      }
+    }
     const app = browser(demo);
     app.element('.app-header').inert = true;
     app.element('.app-shell').inert = true;
@@ -481,7 +486,7 @@ for (const demo of [false, true]) {
         app.images[0].finishDecode();
         await tick();
       }
-      const timeout = [...app.timeouts.values()].find((timer) => timer.delay === 15000);
+      const timeout = [...app.timeouts.values()].find((timer) => timer.delay === 30000);
       assert.ok(timeout, 'Sample preparation has a bounded wait');
       timeout.handler();
       await loading;

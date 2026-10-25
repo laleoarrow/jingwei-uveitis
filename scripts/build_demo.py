@@ -8,7 +8,7 @@ import shutil
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "static"
 DOCS = ROOT / "docs"
-VERSION = "workbench-demo-25"
+VERSION = "workbench-demo-26"
 DOWNLOAD_URL = "https://github.com/laleoarrow/jingwei-uveitis/archive/refs/heads/main.zip"
 WEIGHTS_URL = "https://pan.baidu.com/s/1r7gfecgxxbtCQnV0FmZlSg?pwd=7a7c"
 INSTALL_URL = "https://github.com/laleoarrow/jingwei-uveitis#installation"
@@ -54,6 +54,9 @@ html, count = re.subn(r'href="/styles\.css(?:\?[^\"]*)?"', f'href="styles.css?v=
 assert count == 1, 'Review the local stylesheet link.'
 html, count = re.subn(r'  <script src="/app\.js(?:\?[^\"]*)?" defer></script>', f'  <link rel="stylesheet" href="demo.css?v={VERSION}">\n  <script src="reference-data.js?v={VERSION}" defer></script>\n  <script src="demo-adapter.js?v={VERSION}" defer></script>\n  <script src="app.js?v={VERSION}" defer></script>', html)
 assert count == 1, 'Review the local application script link.'
+html = replace_once(html, '  <style id="reportPrintMetadata"></style>', '''  <link rel="preload" as="image" href="assets/sample-oct-generated.png" fetchpriority="low">
+  <link rel="preload" as="image" href="assets/sample-cfp-generated.png" fetchpriority="low">
+  <style id="reportPrintMetadata"></style>''')
 html = html.replace('src="/jingwei-wordmark.svg', 'src="jingwei-wordmark.svg')
 html = replace_once(html, '  <title>JingWei System</title>', '  <title>JingWei System · Demo</title>\n  <meta http-equiv="Content-Security-Policy" content="default-src \'self\'; script-src \'self\'; style-src \'self\' \'unsafe-inline\'; img-src \'self\' blob: data:; connect-src \'none\'; font-src \'none\'; object-src \'none\'; base-uri \'self\'; form-action \'none\'">')
 html = replace_once(html, '<body>\n', f'''<body>
