@@ -7,6 +7,7 @@ import threading
 import unittest
 from unittest.mock import patch
 from urllib.error import HTTPError, URLError
+from urllib.request import ProxyHandler, build_opener
 
 from PIL import Image
 
@@ -341,6 +342,49 @@ class LandmarkTests(unittest.TestCase):
         with patch("landmarks.urlopen", return_value=io.BytesIO(b"not JSON")):
             with self.assertRaisesRegex(LandmarkError, "unreadable response"):
                 suggest_landmarks(self.image, "sk-test-only")
+
+    def test_interrupted_and_nested_success_responses_over_http(self):
+        received = []
+
+        class Provider(BaseHTTPRequestHandler):
+            def do_POST(self):
+                received.append(self.path)
+                self.rfile.read(int(self.headers["Content-Length"]))
+                if self.path.startswith("/disconnect/"):
+                    self.close_connection = True
+                    return
+                nested = self.path.startswith("/nested/")
+                body = b"[" * 10000 + b'"private"' + b"]" * 10000 if nested else b'{"private":"fragment"}'
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body) + (0 if nested else 100)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *_args):
+                pass
+
+        with HTTPServer(("127.0.0.1", 0), Provider) as server:
+            thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
+            thread.start()
+            try:
+                opener = build_opener(ProxyHandler({}))
+                for mode, status in (("truncated", 502), ("disconnect", 504), ("nested", 502)):
+                    self.clock.side_effect = [10.125, 12.875]
+                    with self.subTest(mode=mode), patch("landmarks.urlopen", side_effect=opener.open) as call:
+                        with self.assertRaises(LandmarkError) as caught:
+                            suggest_landmarks(self.image, "local-test-key",
+                                              base_url=f"http://127.0.0.1:{server.server_port}/{mode}")
+                        call.assert_called_once()
+                        self.assertEqual(caught.exception.status, status)
+                        self.assertEqual(caught.exception.metadata, {
+                            "model": DEFAULT_MODEL, "elapsed_seconds": 2.75, "usage": None,
+                        })
+                        self.assertNotIn("private", str(caught.exception))
+            finally:
+                server.shutdown()
+                thread.join()
+        self.assertEqual(received, ["/truncated/responses", "/disconnect/responses", "/nested/responses"])
 
 
 if __name__ == "__main__":

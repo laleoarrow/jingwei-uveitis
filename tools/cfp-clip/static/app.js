@@ -395,6 +395,9 @@ function openApiSettings() {
 
 function resetPoints() {
   if (state.busy || !current() || state.closed) return;
+  const pointer = state.pointer;
+  state.pointer = null;
+  if (pointer && $('sourceCanvas').hasPointerCapture(pointer.id)) $('sourceCanvas').releasePointerCapture(pointer.id);
   current().points = [];
   pointsChanged();
 }

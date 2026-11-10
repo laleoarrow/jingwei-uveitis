@@ -19,7 +19,8 @@ SOURCE_FILES = (
     "requirements.txt", "requirements-build.txt", "start.command", "start.bat",
     "build_release.py", "static/index.html", "static/styles.css", "static/app.js",
     "static/jingwei-wordmark.svg", "tests/test_core.py", "tests/test_server.py",
-    "tests/test_landmarks.py", "tests/test_launchers.py", "tests/browser.cjs", "tests/smoke_package.py",
+    "tests/test_landmarks.py", "tests/test_launchers.py", "tests/test_build_release.py",
+    "tests/browser.cjs", "tests/smoke_package.py",
 )
 
 
@@ -27,7 +28,11 @@ def source_zip(dist: Path) -> Path:
     archive = dist / f"{NAME}-source.zip"
     with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as bundle:
         for relative in SOURCE_FILES:
-            bundle.write(ROOT / relative, f"{NAME}/{relative}")
+            source = ROOT / relative
+            entry = zipfile.ZipInfo.from_file(source, f"{NAME}/{relative}")
+            entry.create_system = 3  # Preserve the macOS launcher's executable mode on Windows builds.
+            entry.external_attr = (0o100755 if relative == "start.command" else 0o100644) << 16
+            bundle.writestr(entry, source.read_bytes(), compress_type=zipfile.ZIP_DEFLATED)
     return archive
 
 

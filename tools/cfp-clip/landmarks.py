@@ -183,7 +183,7 @@ def suggest_landmarks(image: Image.Image, api_key: object, model: object = DEFAU
             raise LandmarkError("The API service is temporarily unavailable. Please try again later.") from None
         except (TimeoutError, URLError, OSError):
             raise LandmarkError("Could not reach the API in time. Check the base URL and your connection.", 504) from None
-        except (ValueError, UnicodeError):
+        except (ValueError, UnicodeError, HTTPException, RecursionError):
             raise LandmarkError("The API returned an unreadable response. Please try again.") from None
         finally:
             metadata = {"model": model, "elapsed_seconds": round(perf_counter() - started, 3),

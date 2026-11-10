@@ -93,7 +93,8 @@ h2 { margin: 0; font-size: 15px; font-weight: 550; letter-spacing: -.1px; }
 .landmarks li.done .step-number { color: #fff; background: var(--green); border-color: var(--green); }
 .step-status { margin-left: auto; color: #7b968d; font-size: 11px; }
 .method-note { color: #8a9e97; font-size: 10px; line-height: 18px; margin: 9px 0 0; height: 18px; white-space: nowrap; }
-.keep-button { width: 100%; }
+.keep-button { width: 100%; position: relative; }
+.keep-icon { position: absolute; left: calc(50% - 99px); width: 18px; height: 18px; pointer-events: none; }
 #keepButtonLabel { width: 126px; text-align: center; }
 .status-line { display: flex; align-items: baseline; gap: 9px; padding: 13px 0; height: 64px; margin-top: 17px; border-bottom: 1px solid var(--line); }
 .status-copy { flex: 1; min-width: 0; max-height: 38px; overflow: auto; }

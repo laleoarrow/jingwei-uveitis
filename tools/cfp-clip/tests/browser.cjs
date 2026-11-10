@@ -245,6 +245,20 @@ function zipNames(bytes) {
     }
     adjusted = await points();
 
+    // A second input can press Reset while the first pointer is dragging point 2.
+    const resetDrag = await screenPoint(adjusted[1]);
+    await page.mouse.move(resetDrag.x, resetDrag.y); await page.mouse.down();
+    assert.equal(await page.evaluate(() => state.pointer.index), 1);
+    await page.locator('#resetButton').dispatchEvent('click');
+    await page.mouse.move(resetDrag.x + 15, resetDrag.y + 10); await page.mouse.up();
+    assert.deepEqual(await points(), []);
+    assert.equal(await page.evaluate(() => state.pointer), null);
+    assert.deepEqual(errors, []);
+    for (const point of adjusted) {
+      const position = await screenPoint(point); await page.mouse.click(position.x, position.y);
+    }
+    adjusted = await points();
+
     // Failed suggestions must leave the user's landmarks intact.
     await page.unroute('**/api/images/*/landmarks');
     await page.route('**/api/images/*/landmarks', route => route.fulfill({ status: 400,
