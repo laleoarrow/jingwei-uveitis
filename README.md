@@ -148,7 +148,9 @@ For other problems, [open an issue](https://github.com/laleoarrow/jingwei-uveiti
 
 ## Optional CFP cropping tool
 
-[**JingWei CFP Crop**](tools/cfp-clip/README.md) is a separate tool for landmark-guided, macula-centred cropping of widefield CFP images. Download its own attachment from [Releases](https://github.com/laleoarrow/jingwei-uveitis/releases) if needed; it runs independently and requires no JingWei installation or model weights.
+**JingWei CFP Crop v1.0.0** is an optional, independent tool for macula-centred cropping of widefield CFP images. Download the [Windows app](https://github.com/laleoarrow/jingwei-uveitis/releases/download/v1.0.0/JingWei-CFP-Crop-v1.0.0-Windows-amd64.zip) or [source package](https://github.com/laleoarrow/jingwei-uveitis/releases/download/v1.0.0/JingWei-CFP-Crop-v1.0.0-source.zip); no JingWei installation or model weights are needed.
+
+Extract the Windows ZIP and open **JingWei-CFP-Crop.exe**. Choose images, mark **optic disc → macular centre**, select **Keep crop**, then **Export crops**. See the [tool README](tools/cfp-clip/README.md) for source-package startup and optional API assistance.
 
 ## License
 

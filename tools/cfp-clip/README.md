@@ -1,12 +1,12 @@
-# JingWei CFP Crop
+# JingWei CFP Crop v1.0.0
 
 An optional JingWei companion for cropping widefield CFP images to a macula-centred field. It runs independently on your computer.
 
 ## Start
 
-Download the separate **JingWei-CFP-Crop** attachment from [JingWei Releases](https://github.com/laleoarrow/jingwei-uveitis/releases), extract it, and open **JingWei CFP Crop.app** (macOS) or **JingWei-CFP-Crop.exe** (Windows). These standalone packages include Python. The interface opens in your browser; use **Quit tool** when finished.
+**Windows:** Download the [Windows app](https://github.com/laleoarrow/jingwei-uveitis/releases/download/v1.0.0/JingWei-CFP-Crop-v1.0.0-Windows-amd64.zip), extract it, and open **JingWei-CFP-Crop.exe**. Python is included. The interface opens in your browser; use **Quit tool** when finished.
 
-For the source package, install Python 3.10–3.13, then double-click `start.command` on macOS or `start.bat` on Windows; on Linux, run `bash start.command`. First launch installs dependencies into this tool's own `.venv` and requires internet. Manual cropping works offline.
+**macOS, Linux or source use:** Download the [source package](https://github.com/laleoarrow/jingwei-uveitis/releases/download/v1.0.0/JingWei-CFP-Crop-v1.0.0-source.zip) and install Python 3.10–3.13. After extracting, double-click `start.command` on macOS or `start.bat` on Windows; on Linux, run `bash start.command`. First launch installs dependencies into this tool's own `.venv` and requires internet. Manual cropping works offline.
 
 ## Crop
 
