@@ -6,7 +6,7 @@ on_exit() {
     status=$?
     if [[ $status -ne 0 && $status -ne 130 ]]; then
         echo
-        echo 'CFP Crop could not start. See the error above and README.md.'
+        echo 'JingWei Crop could not start. See the error above and README.md.'
         if [[ -t 0 ]]; then read -r -p 'Press Enter to close.'; fi
     fi
     exit "$status"

@@ -1,4 +1,4 @@
-name: CFP Crop packages
+name: JingWei Crop packages
 on:
   workflow_dispatch:
   push:
@@ -39,9 +39,9 @@ jobs:
           NODE_PATH: ${{ github.workspace }}/tools/cfp-clip/build/browser/node_modules
       - run: python build_release.py
       - name: Check extracted package and offline restart
-        run: python tests/smoke_package.py "dist/JingWei-CFP-Crop-v1.0.0.zip"
+        run: python tests/smoke_package.py "dist/JingWei-Crop-v1.0.0.zip"
       - uses: actions/upload-artifact@v4
         with:
-          name: CFP-Crop
-          path: tools/cfp-clip/dist/JingWei-CFP-Crop-v1.0.0.zip
+          name: JingWei-Crop
+          path: tools/cfp-clip/dist/JingWei-Crop-v1.0.0.zip
           if-no-files-found: error

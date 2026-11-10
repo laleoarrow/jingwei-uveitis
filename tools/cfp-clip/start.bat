@@ -4,7 +4,7 @@ rem Let Windows PowerShell load its own modules, including when called from Powe
 set "PSModulePath="
 set "PYTHONUTF8=1"
 cd /d "%~dp0" || (
-  echo Could not open the CFP Crop folder. Extract it to a local folder and try again.
+  echo Could not open the JingWei Crop folder. Extract it to a local folder and try again.
   if not defined CI pause
   exit /b 1
 )

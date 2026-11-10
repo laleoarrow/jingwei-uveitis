@@ -113,7 +113,7 @@ def main():
     environment = dict(os.environ, CI="1", PYTHONUTF8="1", PYTHONUNBUFFERED="1")
     for key in ("PYTHONPATH", "PYTHONHOME"):
         environment.pop(key, None)
-    with tempfile.TemporaryDirectory(prefix="CFP Crop package ") as temporary:
+    with tempfile.TemporaryDirectory(prefix="JingWei Crop package ") as temporary:
         with zipfile.ZipFile(archive) as bundle:
             bundle.extractall(temporary)
         folders = list(Path(temporary).iterdir())

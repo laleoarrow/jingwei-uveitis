@@ -1,4 +1,4 @@
-"""Package only CFP Crop; never traverse or bundle the parent application."""
+"""Package only JingWei Crop; never traverse or bundle the parent application."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -6,7 +6,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parent
 VERSION = "1.0.0"
-NAME = f"JingWei-CFP-Crop-v{VERSION}"
+NAME = f"JingWei-Crop-v{VERSION}"
 SOURCE_FILES = (
     "app.py", "core.py", "landmarks.py", "README.md", "NOTICE.md", "LICENSE", "AGENTS.md",
     "requirements.txt", "start.command", "start.bat", "bootstrap.py", "scripts/start.ps1",

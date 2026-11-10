@@ -1,10 +1,10 @@
-# JingWei CFP Crop v1.0.0
+# JingWei Crop · 精卫裁剪 v1.0.0
 
 An optional JingWei companion for cropping widefield CFP images to a macula-centred field. It runs independently on your computer.
 
 ## Start
 
-Download the [CFP Crop ZIP](https://github.com/laleoarrow/jingwei-uveitis/releases/download/v1.0.0/JingWei-CFP-Crop-v1.0.0.zip) and extract it. The same package supports macOS, Windows and Linux.
+Download the [JingWei Crop ZIP](https://github.com/laleoarrow/jingwei-uveitis/releases/download/v1.0.0/JingWei-Crop-v1.0.0.zip) and extract it. The same package supports macOS, Windows and Linux.
 
 | System | Start |
 |---|---|
@@ -39,9 +39,9 @@ The latest request's duration and reported token usage appear below **Auto-place
 python -m pip install -r requirements.txt
 python -m unittest discover -s tests
 python build_release.py
-python tests/smoke_package.py dist/JingWei-CFP-Crop-v1.0.0.zip
+python tests/smoke_package.py dist/JingWei-Crop-v1.0.0.zip
 ```
 
-Use Python 3.12 for development. The single ZIP in `dist/` contains the application and all launchers. The **CFP Crop packages** workflow tests it on Windows, including first-time setup and an offline restart. Attach this ZIP separately to a JingWei release. The smoke test requires internet for the first installation.
+Use Python 3.12 for development. The single ZIP in `dist/` contains the application and all launchers. The **JingWei Crop packages** workflow tests it on Windows, including first-time setup and an offline restart. Attach this ZIP separately to a JingWei release. The smoke test requires internet for the first installation.
 
 This directory is self-contained, with its own version, environment, tests and release schedule. See [AGENTS.md](AGENTS.md) for maintenance, [NOTICE.md](NOTICE.md) for provenance and [LICENSE](LICENSE) for the JingWei additions' licence.

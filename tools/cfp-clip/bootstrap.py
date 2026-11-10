@@ -1,4 +1,4 @@
-"""Prepare CFP Crop's own environment, then open the application."""
+"""Prepare JingWei Crop's own environment, then open the application."""
 import argparse
 import importlib.metadata
 import os
@@ -44,7 +44,7 @@ def install(uv):
         if check.returncode:
             raise RuntimeError("The existing .venv needs Python 3.10–3.13. Rename it to .venv-backup and reopen the launcher.")
     else:
-        print("Creating the CFP Crop environment...", flush=True)
+        print("Creating the JingWei Crop environment...", flush=True)
         run(uv, "venv", "--python", sys.executable, ENV)
 
     print("Installing image-processing dependencies...", flush=True)
@@ -70,9 +70,9 @@ def main():
         return 0 if ready() else 1
     try:
         if not args.uv:
-            raise RuntimeError("Run start.command or start.bat to set up CFP Crop.")
+            raise RuntimeError("Run start.command or start.bat to set up JingWei Crop.")
         install(args.uv)
-        print("Starting CFP Crop...", flush=True)
+        print("Starting JingWei Crop...", flush=True)
         return subprocess.call([str(PYTHON), str(ROOT / "app.py"), *launch_args], cwd=ROOT)
     except (OSError, RuntimeError, subprocess.CalledProcessError) as error:
         print(f"\nSetup stopped: {error}\nCheck the error above, then reopen the launcher.", file=sys.stderr)

@@ -1,4 +1,4 @@
-"""Independent, loopback-only browser application for JingWei CFP Crop."""
+"""Independent, loopback-only browser application for JingWei Crop."""
 from __future__ import annotations
 
 import argparse
@@ -273,7 +273,7 @@ class ClipHandler(BaseHTTPRequestHandler):
             with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as bundle:
                 for record in completed:
                     bundle.write(record["output"], f"{self.session.folder}_clip/{record['name']}")
-            self.send_file(archive, "application/zip", "JingWei-CFP-Crop.zip")
+            self.send_file(archive, "application/zip", "JingWei-Crop.zip")
         elif method == "POST" and path in {"/api/shutdown", "/api/close-session"}:
             self.read_body(64 * 1024)
             stop = self.server.close_session(self.headers.get("X-Clip-Token", ""), stop_if_empty=path == "/api/shutdown")
@@ -305,14 +305,14 @@ class ClipHandler(BaseHTTPRequestHandler):
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="JingWei CFP Crop — independent local cropping tool")
+    parser = argparse.ArgumentParser(description="JingWei Crop — independent local cropping tool")
     parser.add_argument("--port", type=int, default=0)
     parser.add_argument("--no-browser", action="store_true")
     args = parser.parse_args()
     with ClipServer(args.port) as server:
         url = f"http://127.0.0.1:{server.server_port}/"
         if sys.stdout is not None:
-            print(f"JingWei CFP Crop: {url}\nKeep this window open. Press Ctrl+C to quit.", flush=True)
+            print(f"JingWei Crop: {url}\nKeep this window open. Press Ctrl+C to quit.", flush=True)
         if not args.no_browser:
             webbrowser.open(url)
         try:

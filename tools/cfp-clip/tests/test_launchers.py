@@ -72,7 +72,7 @@ class LauncherTests(unittest.TestCase):
         launcher.write_text(contents.replace('cd /d "%~dp0"', f'cd /d "{self.root / "missing folder"}"'))
         result = self.launch()
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertIn("Could not open the CFP Crop folder", result.stdout)
+        self.assertIn("Could not open the JingWei Crop folder", result.stdout)
         self.assertFalse((self.root / "caller-code-ran").exists())
         self.assertFalse((self.source / "launch.json").exists())
 

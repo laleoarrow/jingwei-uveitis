@@ -35,7 +35,7 @@ try {
     & $bootstrapPython bootstrap.py --uv $uv @appArgs
     exit $LASTEXITCODE
 } catch {
-    Write-Host "CFP Crop could not start: $_"
+    Write-Host "JingWei Crop could not start: $_"
     Write-Host 'See README.md.'
     exit 1
 }

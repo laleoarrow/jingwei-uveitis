@@ -133,7 +133,7 @@ Remote services require internet access and receive only the modality, RVL Score
 |---|---|
 | macOS cannot verify `start.command` | If you downloaded JingWei from this repository, open **System Settings → Privacy & Security** after the blocked launch. Under **Security**, select **Open Anyway** for `start.command`, then confirm **Open**. Double-click the launcher again. See [Apple’s instructions](https://support.apple.com/en-us/102445). |
 | Installation stops during a download | Check your internet connection and run the launcher again. |
-| I have widefield CFP images | Crop them with [JingWei CFP Crop](#optional-cfp-cropping-tool), then import the cropped images into JingWei as **CFP**. |
+| I have widefield CFP images | Crop them with [JingWei Crop](#optional-cfp-cropping-tool), then import the cropped images into JingWei as **CFP**. |
 | Weights are not found | Check the file path for the selected modality in Settings and select **Save changes**. The other modality is optional. |
 | The browser does not open | Keep the terminal running and open its displayed address, usually **http://127.0.0.1:8765/**, rather than opening `index.html`. |
 | The app is already running | Use the existing browser page. To restart, press **Ctrl+C** in the previous terminal, then run the launcher again. |
@@ -149,7 +149,7 @@ For other problems, [open an issue](https://github.com/laleoarrow/jingwei-uveiti
 
 ## Optional CFP cropping tool
 
-**JingWei CFP Crop v1.0.0** is an optional, independent tool for macula-centred cropping of widefield CFP images. Download the [CFP Crop ZIP](https://github.com/laleoarrow/jingwei-uveitis/releases/download/v1.0.0/JingWei-CFP-Crop-v1.0.0.zip) for macOS, Windows or Linux; no JingWei installation or model weights are needed.
+**JingWei Crop v1.0.0** is an optional, independent tool for macula-centred cropping of widefield CFP images. Download the [JingWei Crop ZIP](https://github.com/laleoarrow/jingwei-uveitis/releases/download/v1.0.0/JingWei-Crop-v1.0.0.zip) for macOS, Windows or Linux; no JingWei installation or model weights are needed.
 
 Extract it and open **start.command** on macOS or **start.bat** on Windows; on Linux, run **bash start.command**. Choose images, mark **optic disc → macular centre**, select **Keep crop**, then **Export crops**. See the [tool README](tools/cfp-clip/README.md) for details and optional API assistance.
 

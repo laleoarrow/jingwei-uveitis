@@ -541,7 +541,7 @@ new ResizeObserver(() => { if (state.image) drawSource(); }).observe($('sourceSt
 (async () => {
   try {
     const response = await fetch('/api/config');
-    if (!response.ok) throw new Error('The local tool is unavailable. Restart CFP Crop and reopen its page.');
+    if (!response.ok) throw new Error('The local tool is unavailable. Restart JingWei Crop and reopen its page.');
     const token = (await response.json()).token;
     state.pendingToken = token;
     await api('/api/confirm', { method: 'POST', headers: { 'X-Clip-Token': token, 'Content-Type': 'application/json' }, body: '{}' });
