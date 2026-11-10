@@ -55,6 +55,10 @@ function zipNames(bytes) {
     cwd: path.resolve(__dirname, '..'), stdio: ['ignore', 'pipe', 'pipe'],
   });
   let browser;
+  let serverStderr = '', serverExit = null;
+  const observedPages = [];
+  server.stderr.on('data', chunk => { serverStderr = (serverStderr + chunk.toString()).slice(-8000); });
+  server.once('exit', (code, signal) => { serverExit = { code, signal }; });
   try {
     const base = await new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('Local server did not start.')), 15000);
@@ -68,6 +72,17 @@ function zipNames(bytes) {
     browser = await chromium.launch({ headless: true,
       ...(process.env.CFP_BROWSER ? { executablePath: process.env.CFP_BROWSER } : {}) });
     const context = await browser.newContext({ viewport: { width: 1440, height: 1100 } });
+    context.on('page', target => {
+      const entry = { page: target, events: [] };
+      observedPages.push(entry);
+      const record = event => { entry.events.push({ at: new Date().toISOString(), ...event }); if (entry.events.length > 30) entry.events.shift(); };
+      const startup = url => /\/api\/(config|confirm)$/.test(url);
+      target.on('request', request => { if (startup(request.url())) record({ request: request.method(), url: request.url() }); });
+      target.on('response', response => { if (startup(response.url())) record({ response: response.status(), url: response.url() }); });
+      target.on('requestfailed', request => record({ failed: request.failure()?.errorText, url: request.url() }));
+      target.on('pageerror', error => record({ pageerror: error.message }));
+      target.on('console', message => { if (['error', 'warning'].includes(message.type())) record({ console: message.type(), text: message.text().slice(0, 1000) }); });
+    });
     const page = await context.newPage();
     await installSavePicker(page);
     const errors = [];
@@ -470,6 +485,23 @@ function zipNames(bytes) {
     await page.waitForFunction(async token => (await fetch('/api/export', { headers: { 'X-Clip-Token': token } })).status === 403, pendingToken);
     assert.deepEqual(errors, []);
     console.log('Browser passed: isolated tabs and cleanup; native save cancel/failure/success and fallback warnings; marker/badge drag and pan; kept-draft state; API usage, keyboard and key lifetime; stable layouts at 320/390/820/1440px.');
+  } catch (error) {
+    const pages = await Promise.all(observedPages.map(async ({ page, events }, index) => {
+      let snapshot;
+      try {
+        snapshot = await Promise.race([
+          page.evaluate(() => ({ url: location.href, readyState: document.readyState,
+            visibility: document.visibilityState, focused: document.hasFocus(),
+            status: document.getElementById('status')?.textContent,
+            app: typeof state === 'undefined' ? null : { hasToken: !!state.token,
+              hasPendingToken: !!state.pendingToken, busy: state.busy, closed: state.closed } })),
+          new Promise(resolve => setTimeout(() => resolve({ snapshot: 'Timed out after 2 seconds.' }), 2000)),
+        ]);
+      } catch (snapshotError) { snapshot = { snapshot: snapshotError.message }; }
+      return { page: index + 1, snapshot, events };
+    }));
+    console.error('Browser failure diagnostics:', JSON.stringify({ serverExit, serverStderr, pages }, null, 2));
+    throw error;
   } finally {
     if (browser) await browser.close();
     server.kill();
