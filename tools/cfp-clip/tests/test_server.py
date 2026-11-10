@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import tempfile
 import threading
+from time import perf_counter
 import unittest
 from unittest.mock import patch
 from urllib.parse import quote
@@ -31,13 +32,13 @@ class ServerTests(unittest.TestCase):
         cls.server.server_close()
         cls.static.cleanup()
 
-    def request(self, method, path, body=None, *, headers=None, token=True):
-        actual = {"X-Clip-Token": self.server.token} if token else {}
+    def request(self, method, path, body=None, *, headers=None, token=True, server=None):
+        actual = {"X-Clip-Token": self.token if token is True else token} if token else {}
         actual.update(headers or {})
         if isinstance(body, dict):
             body = json.dumps(body)
             actual["Content-Type"] = "application/json"
-        connection = http.client.HTTPConnection("127.0.0.1", self.server.server_port, timeout=5)
+        connection = http.client.HTTPConnection("127.0.0.1", (server or self.server).server_port, timeout=5)
         connection.request(method, path, body=body, headers=actual)
         response = connection.getresponse()
         data = response.read()
@@ -46,7 +47,13 @@ class ServerTests(unittest.TestCase):
         return result
 
     def setUp(self):
+        self.token = json.loads(self.request("GET", "/api/config", token=False)[2])["token"]
+        self.session = self.server.sessions[self.token]
         self.request("POST", "/api/reset", {"folder": "study"})
+
+    def tearDown(self):
+        for token in list(self.server.sessions):
+            self.server.close_session(token)
 
     def image_bytes(self, size=(40, 30), format="PNG"):
         image = Image.new("RGB", size)
@@ -78,14 +85,14 @@ class ServerTests(unittest.TestCase):
             self.assertEqual(bundle.namelist(), ["study_clip/眼底 image.png"])
             with Image.open(io.BytesIO(bundle.read(bundle.namelist()[0]))) as result:
                 self.assertEqual(result.tobytes(), expected.tobytes())
-        with Image.open(self.server.records[identifier]["source"]) as unchanged:
+        with Image.open(self.session.records[identifier]["source"]) as unchanged:
             self.assertEqual(unchanged.tobytes(), image.tobytes())
         self.assertEqual(original, self.image_bytes()[1])
 
     def test_auth_host_origin_and_static_paths(self):
         self.assertEqual(self.request("GET", "/", token=False)[0], 200)
         config = self.request("GET", "/api/config", token=False)
-        self.assertEqual(json.loads(config[2])["token"], self.server.token)
+        self.assertNotEqual(json.loads(config[2])["token"], self.token)
         self.assertEqual(self.request("POST", "/api/reset", {}, token=False)[0], 403)
         self.assertEqual(self.request("GET", "/api/config", headers={"Host": "attacker.invalid"})[0], 403)
         self.assertEqual(self.request("GET", "/api/config", headers={"Origin": "https://attacker.invalid"})[0], 403)
@@ -111,10 +118,10 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(self.request("GET", "/api/images/missing/preview")[0], 404)
         self.assertEqual(self.request("GET", f"/api/images/{identifier}/crop")[0], 404)
         self.assertEqual(self.request("POST", f"/api/images/{identifier}/crop", {"first": [0, 0], "center": [999, 999]})[0], 400)
-        workspace = self.server.records[identifier]["source"].parent
+        workspace = self.session.records[identifier]["source"].parent
         self.request("POST", "/api/reset", {"folder": "next"})
         self.assertFalse(workspace.exists())
-        self.assertEqual(self.server.records, {})
+        self.assertEqual(self.session.records, {})
 
     def test_tiff_crop_preview_works_in_browser(self):
         record = self.import_image("image.tiff", self.image_bytes(format="TIFF")[1])
@@ -157,7 +164,7 @@ class ServerTests(unittest.TestCase):
                                            "model": "gpt-6-sol", "elapsed_seconds": 2.5, "usage": None})
         self.assertEqual(self.request("GET", base + "/crop")[0], 404)
         self.assertEqual(self.request("GET", "/api/export")[0], 400)
-        self.assertNotIn("sk-test-only", str(self.server.records))
+        self.assertNotIn("sk-test-only", str(self.session.records))
         self.assertNotIn(b"sk-test-only", self.request("GET", "/api/config")[2])
         self.assertEqual(self.request("POST", base + "/landmarks", {})[0], 400)
 
@@ -179,14 +186,108 @@ class ServerTests(unittest.TestCase):
                                           "cached_input_tokens": None, "reasoning_tokens": 4096})
         self.assertNotIn(b"sk-test-only", body)
 
+    def test_sessions_isolate_import_reset_crop_and_export(self):
+        record = self.import_image("tab-A.png")
+        points = {"first": [12, 12], "center": [20, 15]}
+        self.assertEqual(self.request("POST", f"/api/images/{record['id']}/crop", points)[0], 200)
+        second = json.loads(self.request("GET", "/api/config", token=False)[2])["token"]
+        self.assertNotEqual(second, self.token)
+        self.assertNotEqual(self.session.workspace.name, self.server.sessions[second].workspace.name)
+        self.assertEqual(self.request("GET", f"/api/images/{record['id']}/source", token=second)[0], 404)
+        self.assertEqual(self.request("POST", f"/api/images/{record['id']}/crop", points, token=second)[0], 404)
+        self.assertEqual(self.request("GET", "/api/export", token=second)[0], 400)
+        second_record = json.loads(self.request("POST", "/api/images?name=tab-A.png", self.image_bytes()[1], token=second)[2])
+        self.assertEqual(self.request("GET", f"/api/images/{second_record['id']}/source")[0], 404)
+        self.assertEqual(self.request("POST", "/api/reset", {"folder": "tab-B"}, token=second)[0], 200)
+        status, _, data = self.request("GET", "/api/export")
+        self.assertEqual(status, 200)
+        with zipfile.ZipFile(io.BytesIO(data)) as bundle:
+            self.assertEqual(bundle.namelist(), ["study_clip/tab-A.png"])
+            expected = make_circular_clip(self.image_bytes()[0], points["first"], points["center"])
+            with Image.open(io.BytesIO(bundle.read(bundle.namelist()[0]))) as cropped:
+                self.assertEqual(cropped.tobytes(), expected.tobytes())
+
+    def test_close_session_releases_only_its_workspace_and_allows_reload(self):
+        self.import_image()
+        workspace = Path(self.session.workspace.name)
+        second = json.loads(self.request("GET", "/api/config", token=False)[2])["token"]
+        second_workspace = Path(self.server.sessions[second].workspace.name)
+        self.assertEqual(self.request("POST", "/api/close-session", {})[0], 200)
+        self.assertFalse(workspace.exists())
+        self.assertTrue(second_workspace.exists())
+        self.assertEqual(self.request("POST", "/api/reset", {})[0], 403)
+        self.assertEqual(self.request("POST", "/api/reset", {}, token=second)[0], 200)
+        self.assertEqual(self.request("POST", "/api/close-session", {}, token=second)[0], 200)
+        self.assertFalse(second_workspace.exists())
+        self.assertTrue(self.thread.is_alive())
+        self.assertEqual(self.request("GET", "/api/config", token=False)[0], 200)
+
+    def test_quit_one_tab_preserves_another_tab(self):
+        second = json.loads(self.request("GET", "/api/config", token=False)[2])["token"]
+        self.assertEqual(self.request("POST", "/api/shutdown", {})[0], 200)
+        self.assertTrue(self.thread.is_alive())
+        self.assertEqual(self.request("POST", "/api/reset", {}, token=second)[0], 200)
+        self.assertEqual(self.request("GET", "/api/export")[0], 403)
+
+    def test_slow_landmarks_do_not_block_another_tab(self):
+        record = self.import_image()
+        started = threading.Event()
+        release = threading.Event()
+        responses = []
+
+        def slow_suggestion(*_args):
+            started.set()
+            release.wait(timeout=4)
+            return {"first": [12, 12], "center": [20, 15], "model": "test"}
+
+        with patch("app.suggest_landmarks", side_effect=slow_suggestion):
+            thread = threading.Thread(target=lambda: responses.append(self.request(
+                "POST", f"/api/images/{record['id']}/landmarks", {"api_key": "test"})))
+            thread.start()
+            try:
+                self.assertTrue(started.wait(timeout=2))
+                before = perf_counter()
+                second = json.loads(self.request("GET", "/api/config", token=False)[2])["token"]
+                self.assertEqual(self.request("POST", "/api/reset", {}, token=second)[0], 200)
+                self.assertLess(perf_counter() - before, 1)
+                self.assertFalse(release.is_set())
+            finally:
+                release.set()
+                thread.join(timeout=3)
+        self.assertEqual(responses[0][0], 200)
+
+    def test_partial_body_times_out_without_blocking_other_tabs(self):
+        with patch("app.SOCKET_TIMEOUT_SECONDS", 0.25):
+            connection = http.client.HTTPConnection("127.0.0.1", self.server.server_port, timeout=3)
+            try:
+                connection.putrequest("POST", "/api/images?name=partial.png")
+                connection.putheader("X-Clip-Token", self.token)
+                connection.putheader("Content-Length", "100")
+                connection.endheaders()
+                connection.send(b"partial")
+                second = json.loads(self.request("GET", "/api/config", token=False)[2])["token"]
+                self.assertEqual(self.request("POST", "/api/reset", {}, token=second)[0], 200)
+                response = connection.getresponse()
+                self.assertEqual(response.status, 408)
+                self.assertIn("timed out", json.loads(response.read())["error"])
+            finally:
+                connection.close()
+        self.assertEqual(self.request("POST", "/api/reset", {})[0], 200)
+
+    def test_json_body_limit_uses_kilobytes(self):
+        status, _, body = self.request("POST", "/api/reset", b"", headers={"Content-Length": str(64 * 1024 + 1)})
+        self.assertEqual(status, 400)
+        self.assertIn("64 KB", json.loads(body)["error"])
+
     def test_shutdown_cleans_temporary_images(self):
         with ClipServer(static_root=Path(self.static.name)) as server:
             thread = threading.Thread(target=server.serve_forever, daemon=True)
             thread.start()
-            workspace = Path(server.workspace.name)
+            token = json.loads(self.request("GET", "/api/config", token=False, server=server)[2])["token"]
+            workspace = Path(server.sessions[token].workspace.name)
             (workspace / "temporary.png").write_bytes(b"temporary")
             connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=5)
-            connection.request("POST", "/api/shutdown", body="", headers={"X-Clip-Token": server.token})
+            connection.request("POST", "/api/shutdown", body="", headers={"X-Clip-Token": token})
             response = connection.getresponse()
             self.assertEqual(response.status, 200)
             response.read()

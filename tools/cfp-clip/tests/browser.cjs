@@ -4,6 +4,52 @@ const assert = require('node:assert/strict');
 const { spawn } = require('node:child_process');
 const path = require('node:path');
 
+async function installSavePicker(page) {
+  await page.addInitScript(() => {
+    window.__saveEvents = [];
+    window.__saveMode = 'abort';
+    window.__testSavePicker = options => {
+      window.__saveEvents.push('picker');
+      window.__suggestedName = options.suggestedName;
+      if (window.__saveMode === 'abort') return Promise.reject(new DOMException('Cancelled', 'AbortError'));
+      return Promise.resolve({ createWritable: async () => ({
+        write: async blob => {
+          window.__saveEvents.push('write');
+          window.__savedZip = Array.from(new Uint8Array(await blob.arrayBuffer()));
+        },
+        close: async () => {
+          window.__saveEvents.push('close-start');
+          if (window.__saveMode === 'close-error') throw new Error('The ZIP could not be saved.');
+          if (window.__saveMode === 'hold') await new Promise(resolve => { window.__finishSave = resolve; });
+          window.__saveEvents.push('close-complete');
+        },
+        abort: async () => { window.__saveEvents.push('abort'); },
+      }) });
+    };
+    window.showSaveFilePicker = window.__testSavePicker;
+    const originalFetch = window.fetch;
+    window.fetch = function (input, options) {
+      if (input === '/api/export') window.__saveEvents.push('export-fetch');
+      return originalFetch.call(this, input, options);
+    };
+  });
+}
+
+function zipNames(bytes) {
+  const buffer = Buffer.from(bytes);
+  const end = buffer.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
+  assert.ok(end >= 0, 'Export must contain a ZIP directory.');
+  const names = [];
+  let offset = buffer.readUInt32LE(end + 16);
+  for (let index = 0; index < buffer.readUInt16LE(end + 10); index++) {
+    assert.equal(buffer.readUInt32LE(offset), 0x02014b50);
+    const length = buffer.readUInt16LE(offset + 28);
+    names.push(buffer.toString('utf8', offset + 46, offset + 46 + length));
+    offset += 46 + length + buffer.readUInt16LE(offset + 30) + buffer.readUInt16LE(offset + 32);
+  }
+  return names;
+}
+
 (async () => {
   const server = spawn(process.env.CFP_PYTHON || 'python', ['app.py', '--no-browser'], {
     cwd: path.resolve(__dirname, '..'), stdio: ['ignore', 'pipe', 'pipe'],
@@ -21,17 +67,30 @@ const path = require('node:path');
     });
     browser = await chromium.launch({ headless: true,
       ...(process.env.CFP_BROWSER ? { executablePath: process.env.CFP_BROWSER } : {}) });
-    const page = await browser.newPage({ viewport: { width: 1440, height: 1100 } });
+    const context = await browser.newContext({ viewport: { width: 1440, height: 1100 } });
+    const page = await context.newPage();
+    await installSavePicker(page);
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
-    const ready = () => page.waitForFunction(() => !!state.token && !state.busy);
+    const ready = (target = page) => target.waitForFunction(() => !!state.token && !state.busy);
     const points = () => page.evaluate(() => current().points);
-    async function screenPoint(point) {
-      return page.evaluate(([x, y]) => {
+    async function screenPoint(point, target = page) {
+      return target.evaluate(([x, y]) => {
         const box = document.getElementById('sourceCanvas').getBoundingClientRect();
         return { x: box.x + state.rect.x + x * state.rect.scale,
           y: box.y + state.rect.y + y * state.rect.scale };
       }, point);
+    }
+    async function screenBadge(index) {
+      return page.evaluate(index => {
+        const [x, y] = badgePosition(current().points[index]);
+        const box = document.getElementById('sourceCanvas').getBoundingClientRect();
+        return { x: box.x + x, y: box.y + y };
+      }, index);
+    }
+    async function drag(start, dx, dy, target = page) {
+      await target.mouse.move(start.x, start.y); await target.mouse.down();
+      await target.mouse.move(start.x + dx, start.y + dy, { steps: 4 }); await target.mouse.up();
     }
     function near(actual, expected, tolerance = 1) {
       assert.ok(Math.abs(actual - expected) < tolerance, `${actual} != ${expected}`);
@@ -60,6 +119,9 @@ const path = require('node:path');
       buffer: Buffer.from(fixture, 'base64') });
     await page.waitForFunction(() => !!state.image && !state.busy);
     assert.deepEqual(await page.evaluate(() => [state.image.naturalWidth, state.image.naturalHeight]), [512, 384]);
+    assert.equal(await page.locator('#keepButtonLabel').innerText(), 'Keep crop');
+    assert.equal(await page.locator('#apiUsageSummary').innerText(), 'No API request yet');
+    assert.equal(await page.locator('#apiUsageDetail').innerText(), 'Input — · Output —');
 
     const idleLayout = await layout();
     await page.locator('#apiSettingsButton').click();
@@ -121,22 +183,27 @@ const path = require('node:path');
     await page.keyboard.press('Enter');
     assert.equal(await page.evaluate(() => state.busy || current().kept), false);
     await page.mouse.move(first.x + 25, first.y + 12, { steps: 4 }); await page.mouse.up();
-    const adjusted = await points();
+    let adjusted = await points();
     assert.equal(adjusted.length, 2);
     near(adjusted[0][0], initial[0][0] + 25 / scale);
     near(adjusted[0][1], initial[0][1] + 12 / scale);
     assert.deepEqual(adjusted[1], initial[1]);
 
+    // Both explicit Move and Space must pan even when the drag begins on a point.
     await page.locator('#moveButton').click();
     const box = await page.locator('#sourceCanvas').boundingBox();
     const oldRect = await page.evaluate(() => state.rect);
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-    await page.mouse.down();
-    await page.mouse.move(box.x + box.width / 2 + 30, box.y + box.height / 2 + 20, { steps: 4 });
-    await page.mouse.up();
+    await drag(await screenPoint(adjusted[0]), 30, 20);
     assert.deepEqual(await points(), adjusted);
     assert.notEqual(await page.evaluate(() => state.rect.x), oldRect.x);
     await page.locator('#moveButton').click();
+    await page.locator('#sourceCanvas').focus();
+    const beforeSpace = await page.evaluate(() => state.rect);
+    await page.keyboard.down('Space');
+    await drag(await screenPoint(adjusted[1]), -20, -12);
+    await page.keyboard.up('Space');
+    assert.deepEqual(await points(), adjusted);
+    assert.notEqual(await page.evaluate(() => state.rect.x), beforeSpace.x);
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     const zoomBefore = await page.evaluate(() => state.view.zoom);
     await page.mouse.wheel(0, -120);
@@ -145,6 +212,38 @@ const path = require('node:path');
     await page.locator('#fitButton').click();
     assert.equal(await page.evaluate(() => state.view.zoom), 1);
     assert.deepEqual(await points(), adjusted);
+
+    // Drag the visible numbered badges; the point must move only by the drag delta.
+    for (const index of [0, 1]) {
+      const before = await points();
+      const badge = await screenBadge(index);
+      const badgeScale = await page.evaluate(() => state.rect.scale);
+      await page.mouse.move(badge.x, badge.y); await page.mouse.down();
+      await page.mouse.move(badge.x + 4, badge.y + 2);
+      const firstMove = await points();
+      near(firstMove[index][0], before[index][0] + 4 / badgeScale);
+      near(firstMove[index][1], before[index][1] + 2 / badgeScale);
+      await page.mouse.move(badge.x + 16, badge.y + 9); await page.mouse.up();
+      adjusted = await points();
+      near(adjusted[index][0], before[index][0] + 16 / badgeScale);
+      near(adjusted[index][1], before[index][1] + 9 / badgeScale);
+      assert.deepEqual(adjusted[1 - index], before[1 - index]);
+    }
+
+    // The badge is clamped near image edges and must remain a valid drag target.
+    await page.locator('#resetButton').click();
+    const edge = await screenPoint([510, 1]);
+    await page.mouse.click(edge.x, edge.y);
+    const edgePoint = (await points())[0];
+    const edgeScale = await page.evaluate(() => state.rect.scale);
+    await drag(await screenBadge(0), -18, 15);
+    near((await points())[0][0], edgePoint[0] - 18 / edgeScale);
+    near((await points())[0][1], edgePoint[1] + 15 / edgeScale);
+    await page.locator('#resetButton').click();
+    for (const point of adjusted) {
+      const position = await screenPoint(point); await page.mouse.click(position.x, position.y);
+    }
+    adjusted = await points();
 
     // Failed suggestions must leave the user's landmarks intact.
     await page.unroute('**/api/images/*/landmarks');
@@ -165,26 +264,132 @@ const path = require('node:path');
     assert.deepEqual(await points(), adjusted);
     unchangedLayout(await layout(), idleLayout);
 
-    await page.setViewportSize({ width: 390, height: 844 });
-    await page.waitForFunction(() => document.getElementById('sourceCanvas').width > 0);
-    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
-    assert.deepEqual(await points(), adjusted);
+    for (const width of [320, 390, 820]) {
+      await page.setViewportSize({ width, height: 844 });
+      await page.waitForFunction(() => {
+        const canvas = document.getElementById('sourceCanvas');
+        return canvas.width === Math.round(canvas.getBoundingClientRect().width * devicePixelRatio);
+      });
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `Overflow at ${width}px`);
+      assert.deepEqual(await points(), adjusted);
+      const narrowLayout = await layout();
+      await page.locator('#apiSettingsButton').click();
+      unchangedLayout(await layout(), narrowLayout);
+      await page.keyboard.press('Escape');
+      unchangedLayout(await layout(), narrowLayout);
+      for (const id of ['zoomInButton', 'zoomOutButton', 'fitButton', 'moveButton', 'previousButton', 'nextButton']) {
+        const target = await page.locator(`#${id}`).boundingBox();
+        assert.ok(target.width >= 35.9 && target.height >= 35.9, `Small touch target ${id} at ${width}px`);
+      }
+    }
     await page.setViewportSize({ width: 1440, height: 1100 });
     const cropRequest = page.waitForRequest(request => request.url().endsWith('/crop') && request.method() === 'POST');
     await page.locator('#keepButton').click(); await ready();
     assert.deepEqual((await cropRequest).postDataJSON(), { first: adjusted[0], center: adjusted[1] });
     assert.equal(await page.locator('#savedPreview').isVisible(), true);
     unchangedLayout(await layout(), idleLayout);
+
+    // Changing a kept crop is a draft until the user keeps it again.
+    await drag(await screenBadge(1), -10, 5);
+    assert.equal(await page.locator('#cropState').innerText(), 'Unkept changes');
+    assert.match(await page.locator('#status').innerText(), /last kept crop/);
+    assert.deepEqual(await page.evaluate(() => current().savedPoints), adjusted);
+    adjusted = await points();
+    await page.locator('#keepButton').click(); await ready();
+    assert.equal(await page.locator('#cropState').innerText(), 'Kept');
+    assert.deepEqual(await page.evaluate(() => current().savedPoints), adjusted);
+
+    // Cancelling the native picker must not fetch or mark the crops exported.
+    await page.evaluate(() => { window.__saveMode = 'abort'; window.__saveEvents = []; });
+    await page.locator('#exportButton').click(); await ready();
+    assert.deepEqual(await page.evaluate(() => window.__saveEvents), ['picker']);
+    assert.equal(await page.evaluate(() => unexported()), true);
+    assert.match(await page.locator('#status').innerText(), /cancelled/);
+
+    // A failed close also leaves the crops unexported, even after writing bytes.
+    await page.evaluate(() => { window.__saveMode = 'close-error'; window.__saveEvents = []; });
+    await page.locator('#exportButton').click(); await ready();
+    assert.deepEqual(await page.evaluate(() => window.__saveEvents), ['picker', 'export-fetch', 'write', 'close-start', 'abort']);
+    assert.equal(await page.evaluate(() => unexported()), true);
+    assert.match(await page.locator('#status').innerText(), /could not be saved/);
+
+    // Browsers without a native picker cannot confirm a successful download.
+    await page.evaluate(() => { window.showSaveFilePicker = undefined; });
     const downloadEvent = page.waitForEvent('download');
     await page.locator('#exportButton').click();
     const download = await downloadEvent;
     assert.equal(download.suggestedFilename(), 'images_clip.zip');
     assert.equal(await download.failure(), null);
     await ready();
+    assert.equal(await page.evaluate(() => unexported()), true);
+    assert.match(await page.locator('#status').innerText(), /Check it is saved/);
+    const quitDialog = page.waitForEvent('dialog');
+    const quitClick = page.locator('#quitButton').click();
+    const confirmation = await quitDialog;
+    assert.equal(confirmation.type(), 'confirm');
+    await confirmation.dismiss(); await quitClick;
+    assert.equal(await page.evaluate(() => state.closed), false);
+
+    // Only the native stream's successful close confirms the export.
+    await page.evaluate(() => { window.showSaveFilePicker = window.__testSavePicker; window.__saveMode = 'hold'; window.__saveEvents = []; });
+    await page.locator('#exportButton').click();
+    await page.waitForFunction(() => typeof window.__finishSave === 'function');
+    assert.equal(await page.evaluate(() => unexported()), true);
+    assert.equal(await page.evaluate(() => state.busy), true);
+    assert.deepEqual(await page.evaluate(() => window.__saveEvents), ['picker', 'export-fetch', 'write', 'close-start']);
+    await page.evaluate(() => window.__finishSave()); await ready();
+    assert.equal(await page.evaluate(() => unexported()), false);
+    assert.equal(await page.evaluate(() => window.__suggestedName), 'images_clip.zip');
+    assert.deepEqual(zipNames(await page.evaluate(() => window.__savedZip)), ['images_clip/fixture.png']);
+    unchangedLayout(await layout(), idleLayout);
+
+    // A second tab has a separate image set, kept crops and API key.
+    const tabA = await page.evaluate(() => ({ token: state.token, id: current().id }));
+    const tabB = await page.context().newPage();
+    tabB.on('pageerror', error => errors.push(error.message));
+    await installSavePicker(tabB);
+    await tabB.goto(base); await ready(tabB);
+    assert.notEqual(await tabB.evaluate(() => state.token), tabA.token);
+    await tabB.locator('#imageInput').setInputFiles([
+      { name: 'other.png', mimeType: 'image/png', buffer: Buffer.from(fixture, 'base64') },
+      { name: 'second.png', mimeType: 'image/png', buffer: Buffer.from(fixture, 'base64') },
+    ]);
+    await tabB.waitForFunction(() => !!state.image && !state.busy);
+    assert.equal(await tabB.locator('#keepButtonLabel').innerText(), 'Keep crop & next');
+    for (const point of [[100, 100], [180, 150]]) {
+      const position = await screenPoint(point, tabB); await tabB.mouse.click(position.x, position.y);
+    }
+    await tabB.locator('#keepButton').click(); await ready(tabB);
+    assert.equal(await tabB.locator('#keepButtonLabel').innerText(), 'Keep crop');
+    await tabB.evaluate(() => { window.__saveMode = 'success'; });
+    await tabB.locator('#exportButton').click(); await ready(tabB);
+    assert.deepEqual(zipNames(await tabB.evaluate(() => window.__savedZip)), ['images_clip/other.png']);
+    assert.equal(await tabB.evaluate(async id => (await fetch(`/api/images/${id}/source`, { headers: { 'X-Clip-Token': state.token } })).status, tabA.id), 404);
+    assert.deepEqual(await points(), adjusted);
+    assert.equal(await page.evaluate(() => current().kept), true);
+    await page.evaluate(() => { window.__saveMode = 'success'; });
+    await page.locator('#exportButton').click(); await ready();
+    assert.deepEqual(zipNames(await page.evaluate(() => window.__savedZip)), ['images_clip/fixture.png']);
+    await tabB.locator('#apiSettingsButton').click();
+    await tabB.locator('#apiKey').fill('tab-b-key');
+    await tabB.locator('#closeApiSettings').click();
+    const tabBToken = await tabB.evaluate(() => state.token);
+    await tabB.locator('#quitButton').click(); await ready(tabB);
+    assert.equal(await tabB.evaluate(() => state.closed), true);
+    assert.equal(await tabB.locator('#apiKey').inputValue(), '');
+    assert.match(await tabB.locator('#status').innerText(), /This tab is closed/);
+    assert.equal(await page.evaluate(async token => (await fetch('/api/export', { headers: { 'X-Clip-Token': token } })).status, tabBToken), 403);
+    await page.locator('#exportButton').click(); await ready();
+    assert.deepEqual(zipNames(await page.evaluate(() => window.__savedZip)), ['images_clip/fixture.png']);
+    await tabB.close();
+
+    // Reload closes only the old session, starts a fresh one and clears the key.
     await page.reload(); await ready();
     assert.equal(await page.locator('#apiKey').inputValue(), '');
+    assert.notEqual(await page.evaluate(() => state.token), tabA.token);
+    await page.waitForFunction(async token => (await fetch('/api/export', { headers: { 'X-Clip-Token': token } })).status === 403, tabA.token);
     assert.deepEqual(errors, []);
-    console.log('Browser passed: stable layout through settings/loading/results/errors/export, actual usage display, chooser, key lifetime, native-resolution points, drag, zoom, pan and responsive layout.');
+    console.log('Browser passed: isolated tabs and cleanup; native save cancel/failure/success and fallback warnings; marker/badge drag and pan; kept-draft state; API usage, keyboard and key lifetime; stable layouts at 320/390/820/1440px.');
   } finally {
     if (browser) await browser.close();
     server.kill();

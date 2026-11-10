@@ -12,7 +12,7 @@ import tempfile
 import threading
 import webbrowser
 import zipfile
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
@@ -22,6 +22,7 @@ from core import SUPPORTED_SUFFIXES, load_image, make_circular_clip
 from landmarks import DEFAULT_BASE_URL, DEFAULT_MODEL, LandmarkError, suggest_landmarks
 
 MAX_UPLOAD_BYTES = 64 * 1024 * 1024
+SOCKET_TIMEOUT_SECONDS = 15
 STATIC_ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent)) / "static"
 STATIC_FILES = {"index.html", "styles.css", "app.js", "jingwei-wordmark.svg"}
 
@@ -36,14 +37,13 @@ def safe_name(value: object) -> str:
     return value
 
 
-class ClipServer(HTTPServer):
-    def __init__(self, port: int = 0, static_root: Path = STATIC_ROOT):
-        self.token = secrets.token_urlsafe(32)
-        self.static_root = static_root
+class ClipSession:
+    def __init__(self):
+        self.lock = threading.RLock()
+        self.closed = False
         self.workspace = tempfile.TemporaryDirectory(prefix="jingwei-cfp-crop-")
         self.records: dict[str, dict] = {}
         self.folder = "images"
-        super().__init__(("127.0.0.1", port), ClipHandler)
 
     def reset(self, folder: str) -> None:
         folder = safe_name(folder)
@@ -55,13 +55,56 @@ class ClipServer(HTTPServer):
         self.records.clear()
         self.folder = folder
 
+    def close(self) -> None:
+        with self.lock:
+            self.closed = True
+            self.records.clear()
+            self.workspace.cleanup()
+
+
+class ClipServer(ThreadingHTTPServer):
+    def __init__(self, port: int = 0, static_root: Path = STATIC_ROOT):
+        self.static_root = static_root
+        self.sessions: dict[str, ClipSession] = {}
+        self.sessions_lock = threading.Lock()
+        self.closing = False
+        super().__init__(("127.0.0.1", port), ClipHandler)
+
+    def new_session(self) -> str:
+        with self.sessions_lock:
+            if self.closing:
+                raise ValueError("The tool is closing. Reopen it to start a session.")
+            token = secrets.token_urlsafe(32)
+            self.sessions[token] = ClipSession()
+            return token
+
+    def close_session(self, token: str, stop_if_empty: bool = False) -> bool:
+        with self.sessions_lock:
+            session = self.sessions.pop(token, None)
+            stop = stop_if_empty and not self.sessions
+            if stop:
+                self.closing = True
+        if session is not None:
+            session.close()
+        return stop
+
     def server_close(self) -> None:
         super().server_close()
-        self.workspace.cleanup()
+        with self.sessions_lock:
+            self.closing = True
+            sessions = list(self.sessions.values())
+            self.sessions.clear()
+        for session in sessions:
+            session.close()
 
 
 class ClipHandler(BaseHTTPRequestHandler):
     server: ClipServer
+    session: ClipSession | None
+
+    def setup(self) -> None:
+        super().setup()
+        self.connection.settimeout(SOCKET_TIMEOUT_SECONDS)
 
     def log_message(self, *_args) -> None:
         pass  # Do not put image names or patient information in console logs.
@@ -102,7 +145,8 @@ class ClipHandler(BaseHTTPRequestHandler):
             size = -1
         if not 0 <= size <= maximum:
             self.close_connection = True
-            raise ValueError(f"Request must be no larger than {maximum // 1024 // 1024} MB.")
+            limit = f"{maximum // 1024 // 1024} MB" if maximum >= 1024 * 1024 else f"{maximum // 1024} KB"
+            raise ValueError(f"Request must be no larger than {limit}.")
         body = self.rfile.read(size)
         if len(body) != size:
             raise ValueError("The image transfer was interrupted.")
@@ -115,6 +159,7 @@ class ClipHandler(BaseHTTPRequestHandler):
         return value
 
     def allowed(self, path: str) -> bool:
+        self.session = None
         port = self.server.server_port
         host = self.headers.get("Host", "")
         origin = self.headers.get("Origin")
@@ -124,7 +169,9 @@ class ClipHandler(BaseHTTPRequestHandler):
             self.send_json({"error": "Only requests from this local application are accepted."}, 403)
             return False
         if path.startswith("/api/") and path != "/api/config":
-            if not secrets.compare_digest(self.headers.get("X-Clip-Token", ""), self.server.token):
+            with self.server.sessions_lock:
+                self.session = self.server.sessions.get(self.headers.get("X-Clip-Token", ""))
+            if self.session is None:
                 self.send_json({"error": "Reload the application to start a local session."}, 403)
                 return False
         return True
@@ -137,12 +184,24 @@ class ClipHandler(BaseHTTPRequestHandler):
 
     def dispatch(self, method: str) -> None:
         request = urlsplit(self.path)
-        if not self.allowed(request.path):
-            return
         try:
-            self.route(method, request.path, parse_qs(request.query))
+            if not self.allowed(request.path):
+                return
+            if self.session is None:
+                self.route(method, request.path, parse_qs(request.query))
+            else:
+                with self.session.lock:
+                    if self.session.closed:
+                        self.send_json({"error": "Reload the application to start a local session."}, 403)
+                        return
+                    self.route(method, request.path, parse_qs(request.query))
         except LandmarkError as exc:
             self.send_json({"error": str(exc), **exc.metadata}, exc.status)
+        except (BrokenPipeError, ConnectionResetError):
+            self.close_connection = True
+        except TimeoutError:
+            self.close_connection = True
+            self.send_json({"error": "The image transfer timed out. Please try again."}, 408)
         except (ValueError, KeyError, UnidentifiedImageError, Image.DecompressionBombError,
                 Image.DecompressionBombWarning, OSError) as exc:
             message = str(exc) if isinstance(exc, ValueError) else "This image could not be read or saved. Please choose a supported image."
@@ -150,18 +209,18 @@ class ClipHandler(BaseHTTPRequestHandler):
 
     def route(self, method: str, path: str, query: dict) -> None:
         if method == "GET" and path == "/api/config":
-            self.send_json({"token": self.server.token, "supported_suffixes": sorted(SUPPORTED_SUFFIXES)})
+            self.send_json({"token": self.server.new_session(), "supported_suffixes": sorted(SUPPORTED_SUFFIXES)})
         elif method == "POST" and path == "/api/reset":
-            self.server.reset(self.read_json().get("folder", "images"))
+            self.session.reset(self.read_json().get("folder", "images"))
             self.send_json({"ok": True})
         elif method == "POST" and path == "/api/images":
             self.import_image(query)
         elif path.startswith("/api/images/"):
             parts = path.strip("/").split("/")
-            if len(parts) != 4 or parts[2] not in self.server.records:
+            if len(parts) != 4 or parts[2] not in self.session.records:
                 self.send_json({"error": "Image not found in this session."}, 404)
                 return
-            record = self.server.records[parts[2]]
+            record = self.session.records[parts[2]]
             if method == "GET" and parts[3] == "source":
                 self.send_file(record["source"], "image/png")
             elif method == "POST" and parts[3] == "landmarks":
@@ -195,18 +254,22 @@ class ClipHandler(BaseHTTPRequestHandler):
             else:
                 self.send_json({"error": "Unknown operation."}, 404)
         elif method == "GET" and path == "/api/export":
-            completed = [record for record in self.server.records.values() if record["output"].exists()]
+            completed = [record for record in self.session.records.values() if record["output"].exists()]
             if not completed:
                 raise ValueError("Crop at least one image before downloading.")
-            archive = Path(self.server.workspace.name) / "export.zip"
+            archive = Path(self.session.workspace.name) / "export.zip"
             with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as bundle:
                 for record in completed:
-                    bundle.write(record["output"], f"{self.server.folder}_clip/{record['name']}")
+                    bundle.write(record["output"], f"{self.session.folder}_clip/{record['name']}")
             self.send_file(archive, "application/zip", "JingWei-CFP-Crop.zip")
-        elif method == "POST" and path == "/api/shutdown":
+        elif method == "POST" and path in {"/api/shutdown", "/api/close-session"}:
             self.read_body(64 * 1024)
-            self.send_json({"ok": True})
-            threading.Thread(target=self.server.shutdown, daemon=True).start()
+            stop = self.server.close_session(self.headers.get("X-Clip-Token", ""), stop_if_empty=path == "/api/shutdown")
+            try:
+                self.send_json({"ok": True})
+            finally:
+                if stop:
+                    threading.Thread(target=self.server.shutdown, daemon=True).start()
         elif method == "GET" and (path == "/" or path.lstrip("/") in STATIC_FILES):
             name = "index.html" if path == "/" else path.lstrip("/")
             self.send_file(self.server.static_root / name, mimetypes.guess_type(name)[0] or "application/octet-stream")
@@ -217,15 +280,15 @@ class ClipHandler(BaseHTTPRequestHandler):
         name = safe_name(query.get("name", [""])[0])
         if Path(name).suffix.lower() not in SUPPORTED_SUFFIXES:
             raise ValueError("Choose a JPG, PNG, BMP, TIFF, GIF or WebP image.")
-        if any(record["name"].casefold() == name.casefold() for record in self.server.records.values()):
+        if any(record["name"].casefold() == name.casefold() for record in self.session.records.values()):
             raise ValueError("An image with this filename is already in the session.")
         image = load_image(self.read_body())
         identifier = secrets.token_hex(12)
-        directory = Path(self.server.workspace.name) / identifier
+        directory = Path(self.session.workspace.name) / identifier
         directory.mkdir()
         source = directory / "source.image"
         image.save(source, format="PNG")
-        self.server.records[identifier] = {"id": identifier, "name": name, "source": source, "output": directory / name}
+        self.session.records[identifier] = {"id": identifier, "name": name, "source": source, "output": directory / name}
         self.send_json({"id": identifier, "name": name, "width": image.width, "height": image.height})
 
 

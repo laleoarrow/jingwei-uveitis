@@ -28,7 +28,7 @@ function jsonPost(path, data) {
 
 function status(message, error = false) {
   $('status').textContent = message;
-  $('status').parentElement.classList.toggle('error', error);
+  $('status').closest('.status-line').classList.toggle('error', error);
 }
 
 function controls() {
@@ -40,6 +40,7 @@ function controls() {
   $('nextButton').disabled = blocked || state.index < 0 || state.index >= state.images.length - 1;
   $('resetButton').disabled = blocked || !item?.points.length;
   $('keepButton').disabled = blocked || !state.image || item?.points.length !== 2 || radius(item.points) <= 0;
+  $('keepButtonLabel').textContent = item && state.index < state.images.length - 1 ? 'Keep crop & next' : 'Keep crop';
   const noImage = blocked || !state.image;
   for (const id of ['autoPlaceButton', 'fitButton', 'moveButton']) $(id).disabled = noImage;
   $('zoomInButton').disabled = noImage || state.view.zoom >= 8;
@@ -138,7 +139,8 @@ async function showImage(index) {
 function pointPrompt() {
   const item = current();
   if (!item) return;
-  if (!item.points.length) status('Click the optic disc.');
+  if (hasUnkeptChanges(item)) status('Unkept changes. Export still uses the last kept crop.');
+  else if (!item.points.length) status('Click the optic disc.');
   else if (item.points.length === 1) status('Click the macular centre.');
   else if (!radius(item.points)) status('The two landmarks must be at different positions. Drag either point to adjust.', true);
   else status(item.kept && samePoints(item.points, item.savedPoints) ? 'Crop kept.' : 'Drag either point to adjust, then keep the crop.');
@@ -146,6 +148,7 @@ function pointPrompt() {
 
 const radius = points => points?.length === 2 ? 1.5 * Math.hypot(points[0][0] - points[1][0], points[0][1] - points[1][1]) : 0;
 const samePoints = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const hasUnkeptChanges = item => !!item?.kept && !samePoints(item.points, item.savedPoints);
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
 
 function cropBounds(item) {
@@ -178,7 +181,7 @@ function drawApiUsage() {
   const request = current()?.lastApi;
   const summary = $('apiUsageSummary'), detail = $('apiUsageDetail');
   $('apiUsage').title = '';
-  if (!request) { summary.textContent = '—'; detail.textContent = '—'; return; }
+  if (!request) { summary.textContent = 'No API request yet'; detail.textContent = 'Input — · Output —'; return; }
   const seconds = request.pending ? (performance.now() - request.startedAt) / 1000 : request.elapsed_seconds;
   const time = Number.isFinite(seconds) ? `${seconds.toFixed(1)} s` : '—';
   if (request.pending) {
@@ -188,13 +191,20 @@ function drawApiUsage() {
   }
   const count = value => Number.isInteger(value) && value >= 0 ? value.toLocaleString('en-US') : '—';
   const usage = request.usage;
-  summary.textContent = `${time} · ${count(usage?.total_tokens)} tokens`;
+  summary.textContent = `${time} · Total ${count(usage?.total_tokens)} tokens`;
   detail.textContent = usage ? `Input ${count(usage.input_tokens)} · Output ${count(usage.output_tokens)}` : 'Token usage unavailable';
   $('apiUsage').title = [request.model, usage && `Cached input ${count(usage.cached_input_tokens)} · Reasoning ${count(usage.reasoning_tokens)}`].filter(Boolean).join('\n');
 }
 
 function apiMetadata(data, model, elapsed) {
   return { model: data?.model || model, elapsed_seconds: Number.isFinite(data?.elapsed_seconds) ? data.elapsed_seconds : elapsed, usage: data?.usage || null };
+}
+
+function badgePosition(point, rect = state.rect) {
+  return [
+    Math.min(rect.x + rect.width - 13, Math.max(rect.x + 13, rect.x + point[0] * rect.scale + 17)),
+    Math.min(rect.y + rect.height - 13, Math.max(rect.y + 13, rect.y + point[1] * rect.scale - 16))
+  ];
 }
 
 function drawSource() {
@@ -229,8 +239,7 @@ function drawSource() {
     const cx = x + px * scale, cy = y + py * scale;
     ctx.beginPath(); ctx.arc(cx, cy, 4, 0, Math.PI * 2); ctx.fillStyle = index ? '#A9CFD0' : '#ffffff'; ctx.fill();
     ctx.strokeStyle = '#006D5B'; ctx.lineWidth = 1.5; ctx.stroke();
-    const labelX = Math.min(x + width - 13, Math.max(x + 13, cx + 17));
-    const labelY = Math.min(y + height - 13, Math.max(y + 13, cy - 16));
+    const [labelX, labelY] = badgePosition([px, py]);
     ctx.beginPath(); ctx.arc(labelX, labelY, 10, 0, Math.PI * 2); ctx.fillStyle = '#006D5Be8'; ctx.fill();
     ctx.font = '500 11px -apple-system, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#fff'; ctx.fillText(String(index + 1), labelX, labelY);
   });
@@ -243,7 +252,7 @@ function drawPreview() {
   $('previewEmpty').classList.toggle('hidden', ready);
   $('previewCanvas').classList.toggle('hidden', !ready);
   $('previewStage').classList.toggle('has-crop', ready);
-  $('cropState').textContent = ready ? (item.kept && samePoints(item.points, item.savedPoints) ? 'Kept' : 'Preview') : 'Awaiting points';
+  $('cropState').textContent = hasUnkeptChanges(item) ? 'Unkept changes' : ready ? (item.kept ? 'Kept' : 'Preview') : 'Awaiting points';
   if (!ready) return;
   const bounds = cropBounds(item);
   const canvas = $('previewCanvas');
@@ -277,9 +286,13 @@ function pointerDown(event) {
   $('sourceCanvas').focus({ preventScroll: true });
   const position = canvasPosition(event);
   const item = current();
-  const index = item.points.findIndex(([x, y]) => Math.hypot(position[0] - state.rect.x - x * state.rect.scale, position[1] - state.rect.y - y * state.rect.scale) <= 15);
-  const kind = index >= 0 ? 'point' : state.moveMode || state.spaceDown ? 'pan' : 'place';
-  state.pointer = { id: event.pointerId, kind, index, start: position, center: [...state.view.center], moved: false };
+  let index = item.points.findIndex(point => {
+    const [x, y] = badgePosition(point);
+    return Math.hypot(position[0] - x, position[1] - y) <= 12;
+  });
+  if (index < 0) index = item.points.findIndex(([x, y]) => Math.hypot(position[0] - state.rect.x - x * state.rect.scale, position[1] - state.rect.y - y * state.rect.scale) <= 15);
+  const kind = state.moveMode || state.spaceDown ? 'pan' : index >= 0 ? 'point' : 'place';
+  state.pointer = { id: event.pointerId, kind, index, start: position, point: index >= 0 ? [...item.points[index]] : null, center: [...state.view.center], moved: false };
   $('sourceCanvas').setPointerCapture(event.pointerId);
   controls();
 }
@@ -293,7 +306,7 @@ function pointerMove(event) {
   if (!pointer.moved) return;
   if (pointer.kind === 'point') {
     const item = current();
-    const [x, y] = imagePosition(position);
+    const [x, y] = [pointer.point[0] + dx / state.rect.scale, pointer.point[1] + dy / state.rect.scale];
     item.points[pointer.index] = [clamp(x, 0, item.width - 1), clamp(y, 0, item.height - 1)];
     pointsChanged();
   } else if (pointer.kind === 'pan') {
@@ -360,7 +373,8 @@ async function autoPlacePoints() {
       item.points = [points.first, points.center];
       item.suggested = true;
       releaseUrl('cropUrl'); render();
-      status('Suggested points are ready. Drag either point to adjust.');
+      if (hasUnkeptChanges(item)) pointPrompt();
+      else status('Suggested points are ready. Drag either point to adjust.');
     } catch (error) {
       item.lastApi = apiMetadata(error.apiMetadata, model, (performance.now() - startedAt) / 1000);
       throw error;
@@ -408,15 +422,36 @@ async function keepCrop() {
 }
 
 async function exportCrops() {
+  if ($('exportButton').disabled) return;
+  let destination;
+  try {
+    if (typeof window.showSaveFilePicker === 'function') {
+      destination = window.showSaveFilePicker({ suggestedName: `${state.folder}_clip.zip`, types: [{ description: 'ZIP archive', accept: { 'application/zip': ['.zip'] } }] });
+    }
+  } catch (error) { status(error.message, true); return; }
   await run(async () => {
+    let file;
+    try { if (destination) file = await destination; }
+    catch (error) {
+      if (error.name === 'AbortError') { status('Export cancelled. Your crops are still kept.'); return; }
+      throw error;
+    }
     status('Preparing your crop download…');
     const response = await api('/api/export');
-    const url = URL.createObjectURL(await response.blob());
+    const blob = await response.blob();
+    if (file) {
+      const writable = await file.createWritable();
+      try { await writable.write(blob); await writable.close(); }
+      catch (error) { try { await writable.abort(); } catch (_) { /* The stream may already be closed. */ } throw error; }
+      state.exportedRevision = state.revision;
+      status(`ZIP saved with ${keptCount()} crop${keptCount() === 1 ? '' : 's'}.`);
+      return;
+    }
+    const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url; link.download = `${state.folder}_clip.zip`; document.body.append(link); link.click(); link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 60000);
-    state.exportedRevision = state.revision;
-    status(`Download started: ${keptCount()} kept crop${keptCount() === 1 ? '' : 's'}. Your original images are unchanged.`);
+    status('ZIP download started. Check it is saved before closing.');
   });
 }
 
@@ -453,12 +488,15 @@ $('exportButton').addEventListener('click', exportCrops);
 $('quitButton').addEventListener('click', async () => {
   if (unexported() && !window.confirm('Some kept crops have not been exported. Quit and discard them?')) return;
   await run(async () => {
-    await jsonPost('/api/shutdown', {});
-    state.closed = true; state.exportedRevision = state.revision;
-    $('apiKey').value = '';
-    releaseUrl('sourceUrl'); releaseUrl('cropUrl');
-    state.image = null; render();
-    status('The tool is closed and temporary images have been cleared. You can close this tab.');
+    try { await jsonPost('/api/shutdown', {}); }
+    finally {
+      state.closed = true; state.exportedRevision = state.revision;
+      $('apiKey').value = '';
+      releaseUrl('sourceUrl'); releaseUrl('cropUrl');
+      Object.assign(state, { images: [], index: -1, image: null, pointer: null, rect: null, spaceDown: false, moveMode: false });
+      render();
+    }
+    status('This tab is closed. You can close it.');
   });
 });
 document.addEventListener('keydown', event => {
@@ -473,7 +511,14 @@ document.addEventListener('keydown', event => {
 });
 document.addEventListener('keyup', event => { if (event.code === 'Space') { state.spaceDown = false; controls(); } });
 window.addEventListener('blur', () => { state.spaceDown = false; state.pointer = null; controls(); });
-window.addEventListener('beforeunload', event => { if (unexported() && !state.closed) { event.preventDefault(); event.returnValue = ''; } });
+window.addEventListener('beforeunload', event => { if ((unexported() || state.busy) && !state.closed) { event.preventDefault(); event.returnValue = ''; } });
+window.addEventListener('pagehide', () => {
+  $('apiKey').value = '';
+  if (state.token && !state.closed) {
+    fetch('/api/close-session', { method: 'POST', headers: { 'X-Clip-Token': state.token, 'Content-Type': 'application/json' }, body: '{}', keepalive: true }).catch(() => {});
+  }
+});
+window.addEventListener('pageshow', event => { if (event.persisted) window.location.reload(); });
 new ResizeObserver(() => { if (state.image) drawSource(); }).observe($('sourceStage'));
 (async () => {
   try {

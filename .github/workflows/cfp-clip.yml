@@ -5,6 +5,10 @@ on:
     paths:
       - 'tools/cfp-clip/**'
       - '.github/workflows/cfp-clip.yml'
+  pull_request:
+    paths:
+      - 'tools/cfp-clip/**'
+      - '.github/workflows/cfp-clip.yml'
 permissions:
   contents: read
 jobs:

@@ -1,6 +1,7 @@
 import base64
 import io
 import json
+from http.client import IncompleteRead
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import threading
 import unittest
@@ -9,7 +10,7 @@ from urllib.error import HTTPError, URLError
 
 from PIL import Image
 
-from landmarks import DEFAULT_BASE_URL, DEFAULT_MODEL, LandmarkError, parse_response, reported_usage, responses_url, suggest_landmarks
+from landmarks import DEFAULT_BASE_URL, DEFAULT_MODEL, MAX_ERROR_BODY_BYTES, LandmarkError, parse_response, reported_usage, responses_url, suggest_landmarks
 
 
 def response_for(points):
@@ -39,6 +40,7 @@ class LandmarkTests(unittest.TestCase):
         payload = json.loads(request.data)
         self.assertEqual(payload["model"], "gpt-6-sol")
         self.assertFalse(payload["store"])
+        self.assertNotIn("reasoning", payload)
         self.assertTrue(payload["text"]["format"]["strict"])
         self.assertNotIn("sk-test-only", request.data.decode())
         encoded = payload["input"][0]["content"][1]["image_url"].split(",", 1)[1]
@@ -113,6 +115,44 @@ class LandmarkTests(unittest.TestCase):
         self.assertEqual(request.headers["Authorization"], "Bearer provider.test+key/=")
         self.assertEqual(result["model"], "vendor/vision-model")
         self.assertNotIn("provider.test+key/=", str(result))
+
+    def test_compatible_provider_without_reasoning_over_http(self):
+        received = []
+        response = response_for(self.points)
+
+        class Provider(BaseHTTPRequestHandler):
+            def do_POST(self):
+                payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                received.append((self.path, payload))
+                if "reasoning" in payload:
+                    self.send_response(400)
+                    data = {"error": {"message": "Unsupported reasoning parameter"}}
+                else:
+                    self.send_response(200)
+                    data = response
+                body = json.dumps(data).encode()
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *_args):
+                pass
+
+        with HTTPServer(("127.0.0.1", 0), Provider) as server:
+            thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
+            thread.start()
+            try:
+                result = suggest_landmarks(self.image, "local-test-key", "vendor/vision-model",
+                                           f"http://127.0.0.1:{server.server_port}/v1")
+            finally:
+                server.shutdown()
+                thread.join()
+        self.assertEqual((result["first"], result["center"]), ([1200, 400], [800, 500]))
+        self.assertEqual(len(received), 1)
+        self.assertEqual(received[0][0], "/v1/responses")
+        self.assertNotIn("reasoning", received[0][1])
+        self.assertTrue(received[0][1]["text"]["format"]["strict"])
 
     def test_base_url_normalization_and_validation(self):
         for supplied, expected in (
@@ -221,6 +261,72 @@ class LandmarkTests(unittest.TestCase):
                 self.assertNotIn("sk-test-only", str(caught.exception))
                 self.assertNotIn("OpenAI", str(caught.exception))
                 self.assertEqual(caught.exception.metadata, {"model": DEFAULT_MODEL, "elapsed_seconds": 2.75, "usage": None})
+
+    def test_http_error_retains_usage_without_private_details_or_retry(self):
+        body = json.dumps({
+            "error": {"message": "sk-test-only private image and upstream details"},
+            "usage": {"input_tokens": 1200, "output_tokens": 80, "total_tokens": 1280,
+                      "input_tokens_details": {"cached_tokens": 200},
+                      "output_tokens_details": {"reasoning_tokens": 60}},
+        }).encode()
+        for code, status in ((400, 400), (429, 429), (500, 502)):
+            error = HTTPError(DEFAULT_BASE_URL + "/responses", code, "private reason", {}, io.BytesIO(body))
+            self.clock.side_effect = [10.125, 12.875]
+            with self.subTest(code=code), patch("landmarks.urlopen", side_effect=error) as call:
+                with self.assertRaises(LandmarkError) as caught:
+                    suggest_landmarks(self.image, "sk-test-only")
+            call.assert_called_once()
+            self.assertEqual(caught.exception.status, status)
+            self.assertEqual(caught.exception.metadata, {
+                "model": DEFAULT_MODEL, "elapsed_seconds": 2.75,
+                "usage": {"input_tokens": 1200, "output_tokens": 80, "total_tokens": 1280,
+                          "cached_input_tokens": 200, "reasoning_tokens": 60},
+            })
+            exposed = str(caught.exception) + json.dumps(caught.exception.metadata)
+            for private in ("sk-test-only", "private", "upstream"):
+                self.assertNotIn(private, exposed)
+
+    def test_http_error_usage_parsing_is_bounded_and_sanitized(self):
+        class TrackedBody(io.BytesIO):
+            def read(self, size=-1):
+                self.read_size = size
+                return super().read(size)
+
+        bodies = (
+            b"<html>private upstream error</html>", b"\xffprivate invalid encoding",
+            b"<html>private" + b"x" * MAX_ERROR_BODY_BYTES,
+            b'{"usage":{"input_tokens":1},"private":"' + b"x" * MAX_ERROR_BODY_BYTES + b'"}',
+            b'{"error":{"usage":{"input_tokens":1},"message":"private"}}',
+            b'{"usage":{"input_tokens":"private"}}',
+            b"[" * 2000 + b"]" * 2000,
+        )
+        for body in bodies:
+            stream = TrackedBody(body)
+            error = HTTPError(DEFAULT_BASE_URL + "/responses", 500, "private reason", {}, stream)
+            self.clock.side_effect = [10.125, 12.875]
+            with self.subTest(size=len(body)), patch("landmarks.urlopen", side_effect=error) as call:
+                with self.assertRaises(LandmarkError) as caught:
+                    suggest_landmarks(self.image, "sk-test-only")
+            call.assert_called_once()
+            self.assertEqual(stream.read_size, MAX_ERROR_BODY_BYTES + 1)
+            self.assertTrue(stream.closed)
+            self.assertEqual(caught.exception.status, 502)
+            self.assertEqual(caught.exception.metadata, {"model": DEFAULT_MODEL, "elapsed_seconds": 2.75, "usage": None})
+            self.assertNotIn("private", str(caught.exception))
+
+    def test_interrupted_http_error_body_keeps_sanitized_status(self):
+        class InterruptedBody(io.BytesIO):
+            def read(self, size=-1):
+                raise IncompleteRead(b"private upstream fragment", 100)
+
+        error = HTTPError(DEFAULT_BASE_URL + "/responses", 429, "private reason", {}, InterruptedBody())
+        with patch("landmarks.urlopen", side_effect=error) as call:
+            with self.assertRaisesRegex(LandmarkError, "usage limit") as caught:
+                suggest_landmarks(self.image, "sk-test-only")
+        call.assert_called_once()
+        self.assertEqual(caught.exception.status, 429)
+        self.assertIsNone(caught.exception.metadata["usage"])
+        self.assertNotIn("private", str(caught.exception))
 
     def test_network_and_unreadable_response(self):
         for error in (TimeoutError("private connection detail"), URLError("private connection detail")):

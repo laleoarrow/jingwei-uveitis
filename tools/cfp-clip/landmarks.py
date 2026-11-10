@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import base64
+from http.client import HTTPException
 import io
 import json
 import math
@@ -16,6 +17,7 @@ from PIL import Image
 DEFAULT_MODEL = "gpt-6-sol"
 DEFAULT_BASE_URL = "https://api.openai.com/v1"
 TIMEOUT_SECONDS = 90
+MAX_ERROR_BODY_BYTES = 1024 * 1024
 POINT_SCHEMA = {
     "type": ["object", "null"],
     "properties": {
@@ -138,7 +140,6 @@ def suggest_landmarks(image: Image.Image, api_key: object, model: object = DEFAU
     payload = {
         "model": model,
         "store": False,
-        "reasoning": {"effort": "medium"},
         "max_output_tokens": 4096,
         "input": [{"role": "user", "content": [
             {"type": "input_text", "text": PROMPT},
@@ -157,11 +158,20 @@ def suggest_landmarks(image: Image.Image, api_key: object, model: object = DEFAU
     })
     started = perf_counter()
     result = None
+    usage = None
     try:
         try:
             with urlopen(request, timeout=TIMEOUT_SECONDS) as response:
                 result = json.load(response)
+            usage = reported_usage(result)
         except HTTPError as exc:
+            try:
+                with exc:
+                    body = exc.read(MAX_ERROR_BODY_BYTES + 1)
+                if len(body) <= MAX_ERROR_BODY_BYTES:
+                    usage = reported_usage(json.loads(body))
+            except (ValueError, UnicodeError, OSError, HTTPException, RecursionError):
+                pass  # Retain only reported counts, never upstream error details.
             if 300 <= exc.code < 400:
                 raise LandmarkError("The API endpoint redirected this request. Enter the final API base URL.", 400) from None
             if exc.code in {401, 403}:
@@ -177,7 +187,7 @@ def suggest_landmarks(image: Image.Image, api_key: object, model: object = DEFAU
             raise LandmarkError("The API returned an unreadable response. Please try again.") from None
         finally:
             metadata = {"model": model, "elapsed_seconds": round(perf_counter() - started, 3),
-                        "usage": reported_usage(result)}
+                        "usage": usage}
         first, center = parse_response(result, image.size)
     except LandmarkError as exc:
         exc.metadata = metadata
