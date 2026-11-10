@@ -11,7 +11,7 @@ from urllib.request import ProxyHandler, build_opener
 
 from PIL import Image
 
-from landmarks import DEFAULT_BASE_URL, DEFAULT_MODEL, MAX_ERROR_BODY_BYTES, LandmarkError, parse_response, reported_usage, responses_url, suggest_landmarks
+from landmarks import DEFAULT_BASE_URL, DEFAULT_MODEL, MAX_RESPONSE_BODY_BYTES, LandmarkError, parse_response, reported_usage, responses_url, suggest_landmarks
 
 
 def response_for(points):
@@ -30,8 +30,10 @@ class LandmarkTests(unittest.TestCase):
         self.addCleanup(clock.stop)
 
     def test_request_and_native_pixel_coordinates(self):
-        with patch("landmarks.urlopen", return_value=io.BytesIO(json.dumps(response_for(self.points)).encode())) as call:
+        stream = io.BytesIO(json.dumps(response_for(self.points)).encode())
+        with patch.object(stream, "read", wraps=stream.read) as read, patch("landmarks.urlopen", return_value=stream) as call:
             result = suggest_landmarks(self.image, "sk-test-only")
+        read.assert_called_once_with(MAX_RESPONSE_BODY_BYTES + 1)
         self.assertEqual(result, {"first": [1200, 400], "center": [800, 500], "model": DEFAULT_MODEL,
                                   "elapsed_seconds": 0, "usage": None})
         request = call.call_args.args[0]
@@ -107,6 +109,28 @@ class LandmarkTests(unittest.TestCase):
             result = suggest_landmarks(self.image, "sk-test-only", "gpt-6-sol-custom")
         self.assertEqual(result["center"], [2000, 1000])
         self.assertEqual(json.loads(call.call_args.args[0].data)["model"], "gpt-6-sol-custom")
+
+    def test_bad_inner_json_and_huge_coordinates_retain_usage(self):
+        nested = response_for(self.points)
+        nested["output"][1]["content"][0]["text"] = "[" * 10000 + '"private"' + "]" * 10000
+        cases = [("nested", nested)] + [
+            (label, response_for({"optic_disc": {"x": value, "y": 0.4}, "macula": self.points["macula"]}))
+            for label, value in (("huge-positive", 10 ** 1000), ("huge-negative", -(10 ** 1000)))
+        ]
+        for mode, response in cases:
+            response["usage"] = {"input_tokens": 200, "output_tokens": 500, "total_tokens": 700}
+            self.clock.side_effect = [10.125, 12.875]
+            with self.subTest(mode=mode), patch("landmarks.urlopen", return_value=io.BytesIO(json.dumps(response).encode())) as call:
+                with self.assertRaises(LandmarkError) as caught:
+                    suggest_landmarks(self.image, "sk-test-only")
+                call.assert_called_once()
+                self.assertEqual(caught.exception.status, 502)
+                self.assertEqual(caught.exception.metadata, {
+                    "model": DEFAULT_MODEL, "elapsed_seconds": 2.75,
+                    "usage": {"input_tokens": 200, "output_tokens": 500, "total_tokens": 700,
+                              "cached_input_tokens": None, "reasoning_tokens": None},
+                })
+                self.assertNotIn("private", str(caught.exception))
 
     def test_custom_service_and_symbol_key(self):
         with patch("landmarks.urlopen", return_value=io.BytesIO(json.dumps(response_for(self.points)).encode())) as call:
@@ -295,8 +319,8 @@ class LandmarkTests(unittest.TestCase):
 
         bodies = (
             b"<html>private upstream error</html>", b"\xffprivate invalid encoding",
-            b"<html>private" + b"x" * MAX_ERROR_BODY_BYTES,
-            b'{"usage":{"input_tokens":1},"private":"' + b"x" * MAX_ERROR_BODY_BYTES + b'"}',
+            b"<html>private" + b"x" * MAX_RESPONSE_BODY_BYTES,
+            b'{"usage":{"input_tokens":1},"private":"' + b"x" * MAX_RESPONSE_BODY_BYTES + b'"}',
             b'{"error":{"usage":{"input_tokens":1},"message":"private"}}',
             b'{"usage":{"input_tokens":"private"}}',
             b"[" * 2000 + b"]" * 2000,
@@ -309,7 +333,7 @@ class LandmarkTests(unittest.TestCase):
                 with self.assertRaises(LandmarkError) as caught:
                     suggest_landmarks(self.image, "sk-test-only")
             call.assert_called_once()
-            self.assertEqual(stream.read_size, MAX_ERROR_BODY_BYTES + 1)
+            self.assertEqual(stream.read_size, MAX_RESPONSE_BODY_BYTES + 1)
             self.assertTrue(stream.closed)
             self.assertEqual(caught.exception.status, 502)
             self.assertEqual(caught.exception.metadata, {"model": DEFAULT_MODEL, "elapsed_seconds": 2.75, "usage": None})
@@ -345,6 +369,10 @@ class LandmarkTests(unittest.TestCase):
 
     def test_interrupted_and_nested_success_responses_over_http(self):
         received = []
+        valid = json.dumps(response_for(self.points)).encode()
+        oversized = valid + b" " * MAX_RESPONSE_BODY_BYTES
+        bodies = {"truncated": valid, "nested": b"[" * 10000 + b'"private"' + b"]" * 10000,
+                  "oversized": oversized, "unframed-oversized": oversized}
 
         class Provider(BaseHTTPRequestHandler):
             def do_POST(self):
@@ -353,13 +381,17 @@ class LandmarkTests(unittest.TestCase):
                 if self.path.startswith("/disconnect/"):
                     self.close_connection = True
                     return
-                nested = self.path.startswith("/nested/")
-                body = b"[" * 10000 + b'"private"' + b"]" * 10000 if nested else b'{"private":"fragment"}'
+                mode = self.path.split("/")[1]
+                body = bodies[mode]
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", str(len(body) + (0 if nested else 100)))
+                if mode != "unframed-oversized":
+                    self.send_header("Content-Length", str(len(body) + (100 if mode == "truncated" else 0)))
                 self.end_headers()
-                self.wfile.write(body)
+                try:
+                    self.wfile.write(body)
+                except ConnectionError:
+                    pass  # The client may stop reading as soon as the size limit is reached.
 
             def log_message(self, *_args):
                 pass
@@ -369,7 +401,8 @@ class LandmarkTests(unittest.TestCase):
             thread.start()
             try:
                 opener = build_opener(ProxyHandler({}))
-                for mode, status in (("truncated", 502), ("disconnect", 504), ("nested", 502)):
+                for mode, status in (("truncated", 502), ("disconnect", 504), ("nested", 502),
+                                     ("oversized", 502), ("unframed-oversized", 502)):
                     self.clock.side_effect = [10.125, 12.875]
                     with self.subTest(mode=mode), patch("landmarks.urlopen", side_effect=opener.open) as call:
                         with self.assertRaises(LandmarkError) as caught:
@@ -384,7 +417,8 @@ class LandmarkTests(unittest.TestCase):
             finally:
                 server.shutdown()
                 thread.join()
-        self.assertEqual(received, ["/truncated/responses", "/disconnect/responses", "/nested/responses"])
+        self.assertEqual(received, ["/truncated/responses", "/disconnect/responses", "/nested/responses",
+                                    "/oversized/responses", "/unframed-oversized/responses"])
 
 
 if __name__ == "__main__":

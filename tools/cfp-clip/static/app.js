@@ -1,7 +1,7 @@
 'use strict';
 
 const $ = id => document.getElementById(id);
-const state = { token: '', images: [], index: -1, image: null, busy: false, closed: false,
+const state = { token: '', pendingToken: '', images: [], index: -1, image: null, busy: false, closed: false,
   folder: 'images', revision: 0, exportedRevision: 0, sourceUrl: null, cropUrl: null, rect: null,
   view: { zoom: 1, center: [0, 0] }, moveMode: false, spaceDown: false, pointer: null };
 const supported = new Set(['jpg', 'jpeg', 'png', 'bmp', 'tif', 'tiff', 'gif', 'webp']);
@@ -61,7 +61,7 @@ function controls() {
   $('secondStep').classList.toggle('active', item?.points.length === 1);
   $('secondStep').classList.toggle('done', item?.points.length === 2);
   $('firstStatus').textContent = item?.points.length ? (item.suggested ? 'Suggested' : 'Selected') : 'Select first';
-  $('secondStatus').textContent = item?.points.length === 2 ? (item.suggested ? 'Suggested' : 'Selected') : 'Crop centre';
+  $('secondStatus').textContent = item?.points.length === 2 ? (item.suggested ? 'Suggested' : 'Selected') : 'Select second';
 }
 
 async function run(action) {
@@ -402,14 +402,30 @@ function resetPoints() {
   pointsChanged();
 }
 
+function animateKeep(success = true) {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const icon = $('keepButton').querySelector('.keep-icon');
+  icon.getAnimations().forEach(animation => animation.cancel());
+  const frames = success ? [{ transform: 'rotate(0deg)' }, { transform: 'rotate(360deg)' }] : [
+    { transform: 'rotate(0deg)', offset: 0 },
+    { transform: 'rotate(110deg)', offset: .45 },
+    { transform: 'rotate(110deg)', offset: .58 },
+    { transform: 'rotate(-8deg)', offset: .85 },
+    { transform: 'rotate(0deg)', offset: 1 }
+  ];
+  icon.animate(frames, { duration: success ? 320 : 420, easing: 'ease-out' });
+}
+
 async function keepCrop() {
   if ($('keepButton').disabled) return;
   await run(async () => {
     const item = current();
     const points = item.points.map(point => [...point]);
     status('Keeping crop at original resolution…');
-    await jsonPost(`/api/images/${item.id}/crop`, { first: points[0], center: points[1] });
+    try { await jsonPost(`/api/images/${item.id}/crop`, { first: points[0], center: points[1] }); }
+    catch (error) { animateKeep(false); throw error; }
     item.kept = true; item.savedPoints = points; state.revision++;
+    animateKeep();
     if (state.index < state.images.length - 1) {
       await showImage(state.index + 1);
       status(`Crop kept. ${current().points.length ? 'Review the next photograph.' : 'Click the optic disc on the next photograph.'}`);
@@ -491,14 +507,12 @@ $('exportButton').addEventListener('click', exportCrops);
 $('quitButton').addEventListener('click', async () => {
   if (unexported() && !window.confirm('Some kept crops have not been exported. Quit and discard them?')) return;
   await run(async () => {
-    try { await jsonPost('/api/shutdown', {}); }
-    finally {
-      state.closed = true; state.exportedRevision = state.revision;
-      $('apiKey').value = '';
-      releaseUrl('sourceUrl'); releaseUrl('cropUrl');
-      Object.assign(state, { images: [], index: -1, image: null, pointer: null, rect: null, spaceDown: false, moveMode: false });
-      render();
-    }
+    $('apiKey').value = '';
+    await jsonPost('/api/shutdown', {});
+    state.closed = true; state.exportedRevision = state.revision;
+    releaseUrl('sourceUrl'); releaseUrl('cropUrl');
+    Object.assign(state, { images: [], index: -1, image: null, pointer: null, rect: null, spaceDown: false, moveMode: false });
+    render();
     status('This tab is closed. You can close it.');
   });
 });
@@ -517,8 +531,9 @@ window.addEventListener('blur', () => { state.spaceDown = false; state.pointer =
 window.addEventListener('beforeunload', event => { if ((unexported() || state.busy) && !state.closed) { event.preventDefault(); event.returnValue = ''; } });
 window.addEventListener('pagehide', () => {
   $('apiKey').value = '';
-  if (state.token && !state.closed) {
-    fetch('/api/close-session', { method: 'POST', headers: { 'X-Clip-Token': state.token, 'Content-Type': 'application/json' }, body: '{}', keepalive: true }).catch(() => {});
+  const token = state.token || state.pendingToken;
+  if (token && !state.closed) {
+    fetch('/api/close-session', { method: 'POST', headers: { 'X-Clip-Token': token, 'Content-Type': 'application/json' }, body: '{}', keepalive: true }).catch(() => {});
   }
 });
 window.addEventListener('pageshow', event => { if (event.persisted) window.location.reload(); });
@@ -527,7 +542,11 @@ new ResizeObserver(() => { if (state.image) drawSource(); }).observe($('sourceSt
   try {
     const response = await fetch('/api/config');
     if (!response.ok) throw new Error('The local tool is unavailable. Restart CFP Crop and reopen its page.');
-    state.token = (await response.json()).token;
+    const token = (await response.json()).token;
+    state.pendingToken = token;
+    await api('/api/confirm', { method: 'POST', headers: { 'X-Clip-Token': token, 'Content-Type': 'application/json' }, body: '{}' });
+    state.token = token;
+    state.pendingToken = '';
     status('Choose a folder or select images to begin.');
   } catch (error) { status(error.message, true); }
   controls();

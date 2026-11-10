@@ -1,6 +1,10 @@
 @echo off
 setlocal
-cd /d "%~dp0"
+cd /d "%~dp0" || (
+  echo Could not open the CFP Crop folder. Extract it to a local folder and try again.
+  pause
+  exit /b 1
+)
 set "check_version=import sys; sys.exit(not ((3, 10) <= sys.version_info < (3, 14)))"
 if exist ".venv" goto environment
 for %%V in (3.13 3.12 3.11 3.10) do (

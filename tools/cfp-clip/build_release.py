@@ -32,7 +32,10 @@ def source_zip(dist: Path) -> Path:
             entry = zipfile.ZipInfo.from_file(source, f"{NAME}/{relative}")
             entry.create_system = 3  # Preserve the macOS launcher's executable mode on Windows builds.
             entry.external_attr = (0o100755 if relative == "start.command" else 0o100644) << 16
-            bundle.writestr(entry, source.read_bytes(), compress_type=zipfile.ZIP_DEFLATED)
+            content = source.read_bytes()
+            if relative == "start.command":
+                content = content.replace(b"\r\n", b"\n")
+            bundle.writestr(entry, content, compress_type=zipfile.ZIP_DEFLATED)
     return archive
 
 

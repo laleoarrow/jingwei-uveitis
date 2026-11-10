@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import venv
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -52,6 +53,28 @@ class LauncherTests(unittest.TestCase):
             if marker.exists():
                 self.assertEqual(marker.read_text(), "existing environment")
             marker.write_text("existing environment")
+
+    @unittest.skipUnless(os.name == "nt", "Windows directory-change failure regression")
+    def test_failed_directory_change_never_runs_caller_files(self):
+        venv.EnvBuilder(with_pip=False).create(self.root / ".venv")
+        sentinel = self.root / "caller-code-ran"
+        for name in ("app.py", "PIL.py"):
+            (self.root / name).write_text(
+                'from pathlib import Path\n'
+                'Path("caller-code-ran").touch()\n'
+                '__version__ = "11.3.0"\n'
+            )
+        (self.root / "requirements.txt").write_text("must-not-be-installed\n")
+        launcher = self.source / "start.bat"
+        contents = launcher.read_text()
+        self.assertIn('cd /d "%~dp0"', contents)
+        # Inject a missing destination without needing a network share or permissions.
+        launcher.write_text(contents.replace('cd /d "%~dp0"',
+                                            f'cd /d "{self.root / "missing folder"}"'))
+        result = self.launch()
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("Could not open the CFP Crop folder", result.stdout)
+        self.assertFalse(sentinel.exists(), "The launcher executed files from the caller directory")
 
 
 @unittest.skipIf(os.name == "nt", "POSIX interpreter fixtures; Windows uses the real launcher above")

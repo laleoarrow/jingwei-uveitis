@@ -74,7 +74,7 @@ h2 { margin: 0; font-size: 15px; font-weight: 550; letter-spacing: -.1px; }
 #autoPlaceButton[aria-busy="true"] .auto-indicator { color: transparent; border: 1.5px solid #c7ddda; border-top-color: #08766F; border-radius: 50%; animation: turn 1s linear infinite; }
 @keyframes turn { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { #autoPlaceButton[aria-busy="true"] .auto-indicator { animation: none; } }
-.api-usage { display: flex; flex-direction: column; justify-content: center; height: 43px; gap: 1px; padding: 5px 1px 0; font-size: 10px; line-height: 15px; color: #8a9e97; font-variant-numeric: tabular-nums; }
+.api-usage { display: flex; flex-direction: column; justify-content: center; height: 43px; gap: 1px; padding: 5px 1px 0; font-size: 11px; line-height: 15px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .api-usage span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #apiUsageSummary { color: #668a7f; }
 .api-settings { width: min(390px, calc(100vw - 40px)); padding: 24px; border: 1px solid #deebe9; border-radius: 12px; color: var(--ink); background: #fff; box-shadow: 0 16px 70px #16352d20; }
@@ -92,7 +92,7 @@ h2 { margin: 0; font-size: 15px; font-weight: 550; letter-spacing: -.1px; }
 .landmarks li.active .step-number { border-color: #68a59b; color: var(--green); background: #EDF8F5; }
 .landmarks li.done .step-number { color: #fff; background: var(--green); border-color: var(--green); }
 .step-status { margin-left: auto; color: #7b968d; font-size: 11px; }
-.method-note { color: #8a9e97; font-size: 10px; line-height: 18px; margin: 9px 0 0; height: 18px; white-space: nowrap; }
+.method-note { color: var(--muted); font-size: 11px; line-height: 18px; margin: 9px 0 0; height: 18px; white-space: nowrap; }
 .keep-button { width: 100%; position: relative; }
 .keep-icon { position: absolute; left: calc(50% - 99px); width: 18px; height: 18px; pointer-events: none; }
 #keepButtonLabel { width: 126px; text-align: center; }

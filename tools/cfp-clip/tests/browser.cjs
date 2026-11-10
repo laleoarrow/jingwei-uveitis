@@ -96,7 +96,7 @@ function zipNames(bytes) {
       assert.ok(Math.abs(actual - expected) < tolerance, `${actual} != ${expected}`);
     }
     const layout = () => page.evaluate(() => Object.fromEntries(
-      ['sourceStage', 'previewStage', 'keepButton', 'autoPlaceButton', 'apiUsage', 'exportButton'].map(id => {
+      ['sourceStage', 'previewStage', 'keepButton', 'keepButtonLabel', 'autoPlaceButton', 'apiUsage', 'exportButton'].map(id => {
         const box = document.getElementById(id).getBoundingClientRect();
         return [id, [box.x + scrollX, box.y + scrollY, box.width, box.height]];
       })));
@@ -297,10 +297,36 @@ function zipNames(bytes) {
       }
     }
     await page.setViewportSize({ width: 1440, height: 1100 });
+    // A failed keep blocks and returns the scalpel; success turns it fully.
+    await page.evaluate(() => {
+      const icon = document.querySelector('#keepButton .keep-icon');
+      const animate = icon.animate.bind(icon);
+      window.__keepAnimations = [];
+      icon.animate = (frames, options) => {
+        window.__keepAnimations.push({ frames, options });
+        return animate(frames, options);
+      };
+    });
+    await page.route('**/api/images/*/crop', route => route.request().method() === 'POST'
+      ? route.fulfill({ status: 500, json: { error: 'The crop could not be saved.' } }) : route.continue());
+    await page.locator('#keepButton').click(); await ready();
+    const failedAnimation = await page.evaluate(() => window.__keepAnimations);
+    assert.equal(failedAnimation.length, 1);
+    assert.deepEqual(failedAnimation[0].frames.map(frame => frame.transform),
+      ['rotate(0deg)', 'rotate(110deg)', 'rotate(110deg)', 'rotate(-8deg)', 'rotate(0deg)']);
+    assert.equal(failedAnimation[0].frames.at(-1).offset, 1);
+    assert.equal(failedAnimation[0].options.duration, 420);
+    assert.equal(await page.evaluate(() => current().kept), false);
+    assert.deepEqual(await points(), adjusted);
+    await page.unroute('**/api/images/*/crop');
     const cropRequest = page.waitForRequest(request => request.url().endsWith('/crop') && request.method() === 'POST');
     await page.locator('#keepButton').click(); await ready();
     assert.deepEqual((await cropRequest).postDataJSON(), { first: adjusted[0], center: adjusted[1] });
     assert.equal(await page.locator('#savedPreview').isVisible(), true);
+    const animation = await page.evaluate(() => window.__keepAnimations);
+    assert.equal(animation.length, 2);
+    assert.deepEqual(animation[1].frames, [{ transform: 'rotate(0deg)' }, { transform: 'rotate(360deg)' }]);
+    assert.ok(animation[1].options.duration >= 280 && animation[1].options.duration <= 350);
     unchangedLayout(await layout(), idleLayout);
 
     // Changing a kept crop is a draft until the user keeps it again.
@@ -308,6 +334,13 @@ function zipNames(bytes) {
     assert.equal(await page.locator('#cropState').innerText(), 'Unkept changes');
     assert.match(await page.locator('#status').innerText(), /last kept crop/);
     assert.deepEqual(await page.evaluate(() => current().savedPoints), adjusted);
+
+    const beforeReducedMotion = await page.evaluate(() => ({ animations: window.__keepAnimations.length, revision: state.revision }));
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.locator('#keepButton').click(); await ready();
+    assert.equal(await page.evaluate(() => state.revision), beforeReducedMotion.revision + 1);
+    assert.equal(await page.evaluate(() => window.__keepAnimations.length), beforeReducedMotion.animations);
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
     adjusted = await points();
     await page.locator('#keepButton').click(); await ready();
     assert.equal(await page.locator('#cropState').innerText(), 'Kept');
@@ -388,6 +421,16 @@ function zipNames(bytes) {
     await tabB.locator('#apiKey').fill('tab-b-key');
     await tabB.locator('#closeApiSettings').click();
     const tabBToken = await tabB.evaluate(() => state.token);
+    const tabBBeforeQuit = await tabB.evaluate(() => ({ images: state.images, index: state.index,
+      revision: state.revision, exportedRevision: state.exportedRevision, sourceUrl: state.sourceUrl }));
+    await tabB.route('**/api/shutdown', route => route.abort('failed'));
+    await tabB.locator('#quitButton').click(); await ready(tabB);
+    assert.equal(await tabB.evaluate(() => state.closed), false);
+    assert.deepEqual(await tabB.evaluate(() => ({ images: state.images, index: state.index,
+      revision: state.revision, exportedRevision: state.exportedRevision, sourceUrl: state.sourceUrl })), tabBBeforeQuit);
+    assert.equal(await tabB.locator('#quitButton').isEnabled(), true);
+    assert.equal(await tabB.locator('#sourceCanvas').isVisible(), true);
+    await tabB.unroute('**/api/shutdown');
     await tabB.locator('#quitButton').click(); await ready(tabB);
     assert.equal(await tabB.evaluate(() => state.closed), true);
     assert.equal(await tabB.locator('#apiKey').inputValue(), '');
@@ -402,6 +445,29 @@ function zipNames(bytes) {
     assert.equal(await page.locator('#apiKey').inputValue(), '');
     assert.notEqual(await page.evaluate(() => state.token), tabA.token);
     await page.waitForFunction(async token => (await fetch('/api/export', { headers: { 'X-Clip-Token': token } })).status === 403, tabA.token);
+
+    // Closing a page during confirmation must also clean its already-known token.
+    const pendingTab = await context.newPage();
+    pendingTab.on('dialog', async dialog => { errors.push(`Unexpected handshake dialog: ${dialog.type()}`); await dialog.accept(); });
+    let confirmationReceived, releaseConfirmation;
+    const serverConfirmed = new Promise(resolve => { confirmationReceived = resolve; });
+    const confirmationHeld = new Promise(resolve => { releaseConfirmation = resolve; });
+    await pendingTab.route('**/api/confirm', async route => {
+      const response = await route.fetch();
+      confirmationReceived();
+      await confirmationHeld;
+      if (!pendingTab.isClosed()) await route.fulfill({ response });
+    });
+    await pendingTab.goto(base); await serverConfirmed;
+    const pendingToken = await pendingTab.evaluate(() => state.pendingToken);
+    assert.ok(pendingToken);
+    assert.equal(await pendingTab.evaluate(() => state.token), '');
+    assert.equal(await pendingTab.locator('#chooseImages').isDisabled(), true);
+    assert.equal(await page.evaluate(async token => (await fetch('/api/export', { headers: { 'X-Clip-Token': token } })).status, pendingToken), 400);
+    const pendingClosed = pendingTab.waitForEvent('close');
+    await pendingTab.close({ runBeforeUnload: true }); await pendingClosed;
+    releaseConfirmation();
+    await page.waitForFunction(async token => (await fetch('/api/export', { headers: { 'X-Clip-Token': token } })).status === 403, pendingToken);
     assert.deepEqual(errors, []);
     console.log('Browser passed: isolated tabs and cleanup; native save cancel/failure/success and fallback warnings; marker/badge drag and pan; kept-draft state; API usage, keyboard and key lifetime; stable layouts at 320/390/820/1440px.');
   } finally {

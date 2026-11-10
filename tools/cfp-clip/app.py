@@ -41,6 +41,7 @@ class ClipSession:
     def __init__(self):
         self.lock = threading.RLock()
         self.closed = False
+        self.confirmed = False
         self.workspace = tempfile.TemporaryDirectory(prefix="jingwei-cfp-crop-")
         self.records: dict[str, dict] = {}
         self.folder = "images"
@@ -81,7 +82,7 @@ class ClipServer(ThreadingHTTPServer):
     def close_session(self, token: str, stop_if_empty: bool = False) -> bool:
         with self.sessions_lock:
             session = self.sessions.pop(token, None)
-            stop = stop_if_empty and not self.sessions
+            stop = stop_if_empty and not any(item.confirmed for item in self.sessions.values())
             if stop:
                 self.closing = True
         if session is not None:
@@ -170,7 +171,10 @@ class ClipHandler(BaseHTTPRequestHandler):
             return False
         if path.startswith("/api/") and path != "/api/config":
             with self.server.sessions_lock:
-                self.session = self.server.sessions.get(self.headers.get("X-Clip-Token", ""))
+                if not self.server.closing:
+                    self.session = self.server.sessions.get(self.headers.get("X-Clip-Token", ""))
+                    if self.session is not None:
+                        self.session.confirmed = True
             if self.session is None:
                 self.send_json({"error": "Reload the application to start a local session."}, 403)
                 return False
@@ -209,7 +213,15 @@ class ClipHandler(BaseHTTPRequestHandler):
 
     def route(self, method: str, path: str, query: dict) -> None:
         if method == "GET" and path == "/api/config":
-            self.send_json({"token": self.server.new_session(), "supported_suffixes": sorted(SUPPORTED_SUFFIXES)})
+            token = self.server.new_session()
+            try:
+                self.send_json({"token": token, "supported_suffixes": sorted(SUPPORTED_SUFFIXES)})
+            except OSError:
+                self.server.close_session(token)
+                raise
+        elif method == "POST" and path == "/api/confirm":
+            self.read_json()
+            self.send_json({"ok": True})
         elif method == "POST" and path == "/api/reset":
             self.session.reset(self.read_json().get("folder", "images"))
             self.send_json({"ok": True})

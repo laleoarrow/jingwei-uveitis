@@ -12,7 +12,7 @@ import zipfile
 
 from PIL import Image
 
-from app import ClipServer, MAX_UPLOAD_BYTES
+from app import ClipHandler, ClipServer, MAX_UPLOAD_BYTES
 from core import make_circular_clip
 
 
@@ -224,10 +224,69 @@ class ServerTests(unittest.TestCase):
 
     def test_quit_one_tab_preserves_another_tab(self):
         second = json.loads(self.request("GET", "/api/config", token=False)[2])["token"]
+        self.assertFalse(self.server.sessions[second].confirmed)
+        self.assertEqual(self.request("POST", "/api/confirm", {}, token=second)[0], 200)
+        self.assertTrue(self.server.sessions[second].confirmed)
+        self.assertEqual(self.server.sessions[second].records, {})
         self.assertEqual(self.request("POST", "/api/shutdown", {})[0], 200)
         self.assertTrue(self.thread.is_alive())
         self.assertEqual(self.request("POST", "/api/reset", {}, token=second)[0], 200)
         self.assertEqual(self.request("GET", "/api/export")[0], 403)
+
+    def test_first_authenticated_import_preserves_its_session(self):
+        second = json.loads(self.request("GET", "/api/config", token=False)[2])["token"]
+        self.assertFalse(self.server.sessions[second].confirmed)
+        status, _, data = self.request("POST", "/api/images?name=second.png", self.image_bytes()[1], token=second)
+        self.assertEqual(status, 200)
+        record = json.loads(data)
+        self.assertTrue(self.server.sessions[second].confirmed)
+        self.assertEqual(self.request("POST", "/api/shutdown", {})[0], 200)
+        status, _, data = self.request("GET", f"/api/images/{record['id']}/source", token=second)
+        self.assertEqual(status, 200)
+        with Image.open(io.BytesIO(data)) as source:
+            self.assertEqual(source.tobytes(), self.image_bytes()[0].tobytes())
+
+    def test_failed_config_response_removes_only_its_new_workspace(self):
+        created = []
+
+        def disconnected(handler, data, *_args):
+            token = data["token"]
+            created.append((token, Path(handler.server.sessions[token].workspace.name)))
+            raise BrokenPipeError("Browser left before receiving the token")
+
+        connection = http.client.HTTPConnection("127.0.0.1", self.server.server_port, timeout=3)
+        try:
+            with patch.object(ClipHandler, "send_json", autospec=True, side_effect=disconnected):
+                connection.request("GET", "/api/config")
+                with self.assertRaises(http.client.RemoteDisconnected):
+                    connection.getresponse()
+        finally:
+            connection.close()
+        self.assertEqual(len(created), 1)
+        self.assertNotIn(created[0][0], self.server.sessions)
+        self.assertFalse(created[0][1].exists())
+        self.assertEqual(self.request("POST", "/api/reset", {})[0], 200)
+
+    def test_unconfirmed_session_does_not_prevent_last_active_quit(self):
+        with ClipServer(static_root=Path(self.static.name)) as server:
+            thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
+            thread.start()
+            try:
+                abandoned = json.loads(self.request("GET", "/api/config", token=False, server=server)[2])["token"]
+                abandoned_workspace = Path(server.sessions[abandoned].workspace.name)
+                active = json.loads(self.request("GET", "/api/config", token=False, server=server)[2])["token"]
+                active_workspace = Path(server.sessions[active].workspace.name)
+                self.assertEqual(self.request("POST", "/api/confirm", {}, token=active, server=server)[0], 200)
+                self.assertFalse(server.sessions[abandoned].confirmed)
+                self.assertEqual(self.request("POST", "/api/shutdown", {}, token=active, server=server)[0], 200)
+                thread.join(timeout=3)
+                self.assertFalse(thread.is_alive())
+                self.assertTrue(server.closing)
+            finally:
+                server.shutdown()
+                thread.join(timeout=3)
+        self.assertFalse(active_workspace.exists())
+        self.assertFalse(abandoned_workspace.exists())
 
     def test_slow_landmarks_do_not_block_another_tab(self):
         record = self.import_image()

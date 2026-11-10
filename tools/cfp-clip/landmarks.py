@@ -17,7 +17,7 @@ from PIL import Image
 DEFAULT_MODEL = "gpt-6-sol"
 DEFAULT_BASE_URL = "https://api.openai.com/v1"
 TIMEOUT_SECONDS = 90
-MAX_ERROR_BODY_BYTES = 1024 * 1024
+MAX_RESPONSE_BODY_BYTES = 1024 * 1024
 POINT_SCHEMA = {
     "type": ["object", "null"],
     "properties": {
@@ -97,7 +97,7 @@ def pixel_point(value: object, size: tuple[int, int]) -> list[float]:
         raise LandmarkError("The model returned invalid points. Please try again or place them manually.")
     coordinates = [value["x"], value["y"]]
     if any(isinstance(v, bool) or not isinstance(v, (int, float))
-           or not math.isfinite(v) or not 0 <= v <= 1 for v in coordinates):
+           or not 0 <= v <= 1 or not math.isfinite(v) for v in coordinates):
         raise LandmarkError("The model returned points outside the image. Please place them manually.")
     return [coordinates[0] * (size[0] - 1), coordinates[1] * (size[1] - 1)]
 
@@ -121,7 +121,7 @@ def parse_response(response: object, size: tuple[int, int]) -> tuple[list[float]
         return first, center
     except LandmarkError:
         raise
-    except (ValueError, KeyError, TypeError, AttributeError):
+    except (ValueError, KeyError, TypeError, AttributeError, RecursionError):
         raise LandmarkError("The model returned an unreadable suggestion. Please try again or place the points manually.") from None
 
 
@@ -162,13 +162,20 @@ def suggest_landmarks(image: Image.Image, api_key: object, model: object = DEFAU
     try:
         try:
             with urlopen(request, timeout=TIMEOUT_SECONDS) as response:
-                result = json.load(response)
+                expected_length = getattr(response, "length", None)
+                body = response.read(MAX_RESPONSE_BODY_BYTES + 1)
+                if len(body) > MAX_RESPONSE_BODY_BYTES:
+                    raise ValueError("Response exceeds the size limit")
+                # Bounded HTTPResponse.read does not itself reject a truncated Content-Length.
+                if expected_length is not None and len(body) < expected_length:
+                    raise ValueError("Truncated response")
+                result = json.loads(body)
             usage = reported_usage(result)
         except HTTPError as exc:
             try:
                 with exc:
-                    body = exc.read(MAX_ERROR_BODY_BYTES + 1)
-                if len(body) <= MAX_ERROR_BODY_BYTES:
+                    body = exc.read(MAX_RESPONSE_BODY_BYTES + 1)
+                if len(body) <= MAX_RESPONSE_BODY_BYTES:
                     usage = reported_usage(json.loads(body))
             except (ValueError, UnicodeError, OSError, HTTPException, RecursionError):
                 pass  # Retain only reported counts, never upstream error details.
