@@ -22,5 +22,5 @@ manuscript text. No more specific optic-disc landmark definition is inferred.
 
 The wordmark is copied from JingWei's `static/jingwei-wordmark.svg`: fixed vector
 lettering, with no font program. New JingWei material follows the repository's
-CC BY-NC 4.0 licence. Pillow, Python and PyInstaller retain their own licences;
-native packages include their available distribution notices.
+CC BY-NC 4.0 licence. The launchers download uv, Python and Pillow on first
+start; these components retain their own licences and distribution notices.

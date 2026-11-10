@@ -4,9 +4,15 @@ An optional JingWei companion for cropping widefield CFP images to a macula-cent
 
 ## Start
 
-**Windows:** Download the [Windows app](https://github.com/laleoarrow/jingwei-uveitis/releases/download/v1.0.0/JingWei-CFP-Crop-v1.0.0-Windows-amd64.zip), extract it, and open **JingWei-CFP-Crop.exe**. Python is included. The interface opens in your browser; use **Quit tool** when finished.
+Download the [CFP Crop ZIP](https://github.com/laleoarrow/jingwei-uveitis/releases/download/v1.0.0/JingWei-CFP-Crop-v1.0.0.zip) and extract it. The same package supports macOS, Windows and Linux.
 
-**macOS, Linux or source use:** Download the [source package](https://github.com/laleoarrow/jingwei-uveitis/releases/download/v1.0.0/JingWei-CFP-Crop-v1.0.0-source.zip) and install Python 3.10–3.13. After extracting, double-click `start.command` on macOS or `start.bat` on Windows; on Linux, run `bash start.command`. First launch installs dependencies into this tool's own `.venv` and requires internet. Manual cropping works offline.
+| System | Start |
+|---|---|
+| macOS | Double-click **`start.command`**. |
+| Windows | Double-click **`start.bat`**. |
+| Linux | Open a terminal in the extracted folder and run **`bash start.command`**. |
+
+The launcher prepares Python 3.12 and dependencies in this tool's own folder, then opens the interface in your browser. No separate Python installation, JingWei installation or model weights are needed. First launch requires internet; manual cropping then works offline. Keep the terminal open and use **Quit tool** when finished.
 
 ## Crop
 
@@ -30,12 +36,12 @@ The latest request's duration and reported token usage appear below **Auto-place
 ## Development and release
 
 ```bash
-python -m pip install -r requirements-build.txt
+python -m pip install -r requirements.txt
 python -m unittest discover -s tests
-python build_release.py             # standalone source ZIP
-python build_release.py --native    # native package on the current OS
+python build_release.py
+python tests/smoke_package.py dist/JingWei-CFP-Crop-v1.0.0.zip
 ```
 
-Outputs are under `dist/`. Build macOS packages on macOS; use Windows or the **CFP Crop packages** workflow for the Windows package. Attach the resulting ZIPs separately to a JingWei release.
+Use Python 3.12 for development. The single ZIP in `dist/` contains the application and all launchers. The **CFP Crop packages** workflow tests it on Windows, including first-time setup and an offline restart. Attach this ZIP separately to a JingWei release. The smoke test requires internet for the first installation.
 
 This directory is self-contained, with its own version, environment, tests and release schedule. See [AGENTS.md](AGENTS.md) for maintenance, [NOTICE.md](NOTICE.md) for provenance and [LICENSE](LICENSE) for the JingWei additions' licence.

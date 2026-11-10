@@ -1,29 +1,40 @@
 #!/bin/bash
-set -e
-cd "$(dirname "$0")"
-check_version='import sys; sys.exit(not ((3, 10) <= sys.version_info < (3, 14)))'
-if [ ! -e .venv ] && [ ! -L .venv ]; then
-  python=""
-  for candidate in python3 python3.13 python3.12 python3.11 python3.10 python; do
-    if "$candidate" -c "$check_version" >/dev/null 2>&1; then
-      python="$candidate"
-      break
+set -euo pipefail
+cd -- "$(dirname -- "$0")"
+
+on_exit() {
+    status=$?
+    if [[ $status -ne 0 && $status -ne 130 ]]; then
+        echo
+        echo 'CFP Crop could not start. See the error above and README.md.'
+        if [[ -t 0 ]]; then read -r -p 'Press Enter to close.'; fi
     fi
-  done
-  if [ -z "$python" ]; then
-    echo "Install Python 3.10-3.13, or use the standalone CFP Crop download."
-    if [ -t 0 ]; then read -r -p "Press Enter to close."; fi
-    exit 1
-  fi
-  "$python" -m venv .venv
+    exit "$status"
+}
+trap on_exit EXIT
+
+# A configured environment starts without downloading or installing anything.
+if [[ -x .venv/bin/python ]] && .venv/bin/python bootstrap.py --check; then
+    .venv/bin/python app.py "$@"
+    exit $?
 fi
-if ! .venv/bin/python -c "$check_version" >/dev/null 2>&1; then
-  echo "The existing .venv must use Python 3.10-3.13. It has been left unchanged."
-  echo "Move it aside and reopen this launcher, or use the standalone CFP Crop download."
-  if [ -t 0 ]; then read -r -p "Press Enter to close."; fi
-  exit 1
+
+echo 'First-time setup: preparing Python and dependencies. Keep this window open.'
+export UV_UNMANAGED_INSTALL="$PWD/.bootstrap/bin"
+export UV_PYTHON_INSTALL_DIR="$PWD/.bootstrap/python"
+export UV_CACHE_DIR="$PWD/.bootstrap/cache"
+export UV_PYTHON_INSTALL_BIN=0
+export UV_PYTHON_INSTALL_REGISTRY=0
+export UV_NO_CONFIG=1
+uv_tool="$UV_UNMANAGED_INSTALL/uv"
+if [[ ! -x "$uv_tool" ]]; then
+    mkdir -p .bootstrap
+    curl --fail --location --show-error --retry 2 --connect-timeout 15 --max-time 180 \
+        https://astral.sh/uv/0.13.0/install.sh -o .bootstrap/install-uv.sh
+    sh .bootstrap/install-uv.sh
+    rm .bootstrap/install-uv.sh
 fi
-if ! .venv/bin/python -c 'import PIL; assert PIL.__version__ == "11.3.0"' >/dev/null 2>&1; then
-  .venv/bin/python -m pip install -r requirements.txt
-fi
-exec .venv/bin/python app.py "$@"
+echo 'Preparing Python 3.12...'
+"$uv_tool" python install 3.12
+bootstrap_python=$("$uv_tool" python find --managed-python --no-project --system 3.12)
+"$bootstrap_python" bootstrap.py --uv "$uv_tool" "$@"

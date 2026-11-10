@@ -12,7 +12,7 @@ import zipfile
 import build_release
 
 
-class SourcePackageTests(unittest.TestCase):
+class AppPackageTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(prefix="cfp-source-package-")
         self.addCleanup(temporary.cleanup)
@@ -27,9 +27,10 @@ class SourcePackageTests(unittest.TestCase):
         self.launcher_lf = b"#!/bin/sh\nprintf 'launcher-ready\\n'\n"
         (self.source / "start.command").write_bytes(b"#!/bin/sh\r\nprintf 'launcher-ready\\n'\r\n")
         with patch.object(build_release, "ROOT", self.source):
-            self.archive = build_release.source_zip(self.root)
+            self.archive = build_release.app_zip(self.root)
 
     def test_archive_preserves_manifest_content_and_portable_permissions(self):
+        self.assertEqual(self.archive.name, f"{build_release.NAME}.zip")
         with zipfile.ZipFile(self.archive) as bundle:
             expected = [f"{build_release.NAME}/{relative}" for relative in build_release.SOURCE_FILES]
             self.assertEqual(bundle.namelist(), expected)

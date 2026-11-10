@@ -1,26 +1,42 @@
-"""Exercise a frozen executable from an empty directory, without source imports."""
+"""Extract the release ZIP, install through its launcher, then restart offline."""
 import io
 import json
 import os
 from pathlib import Path
+import signal
 import socket
 import subprocess
 import sys
 import tempfile
 import time
-from urllib.error import URLError
-from urllib.request import Request, urlopen
+from urllib.request import ProxyHandler, Request, build_opener
 import zipfile
 
 from PIL import Image
 
 
-def main():
-    if len(sys.argv) != 2:
-        raise SystemExit("Usage: python tests/smoke_package.py <absolute executable>")
-    executable = Path(sys.argv[1]).resolve()
-    if not executable.is_file():
-        raise SystemExit("Provide an existing executable using its absolute path.")
+HTTP = build_opener(ProxyHandler({}))
+LOGS = Path(__file__).resolve().parents[1] / "build/launcher-smoke"
+
+
+def stop(process):
+    if process.poll() is not None:
+        return
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    else:
+        os.killpg(process.pid, signal.SIGTERM)
+    try:
+        process.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        if os.name != "nt":
+            os.killpg(process.pid, signal.SIGKILL)
+        process.kill()
+        process.wait(timeout=10)
+
+
+def run_launcher(root, name, environment, timeout):
     with socket.socket() as reservation:
         reservation.bind(("127.0.0.1", 0))
         port = reservation.getsockname()[1]
@@ -32,30 +48,31 @@ def main():
         if isinstance(body, dict):
             headers["Content-Type"] = "application/json"
             body = json.dumps(body).encode()
-        with urlopen(Request(base + path, data=body, headers=headers), timeout=2) as response:
+        with HTTP.open(Request(base + path, data=body, headers=headers), timeout=3) as response:
             assert response.status == 200, (path, response.status)
             return response.read()
 
-    environment = os.environ.copy()
-    for key in ("PYTHONPATH", "PYTHONHOME"):
-        environment.pop(key, None)
-    with tempfile.TemporaryDirectory(prefix="cfp-crop-package-smoke-") as empty_directory:
-        process = subprocess.Popen(
-            [str(executable), "--port", str(port), "--no-browser"],
-            cwd=empty_directory, env=environment, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        )
+    command = (["cmd.exe", "/d", "/c", "start.bat"] if os.name == "nt" else ["bash", "start.command"])
+    command += ["--port", str(port), "--no-browser"]
+    options = ({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt"
+               else {"start_new_session": True})
+    log_path = LOGS / f"{name}.log"
+    started = time.monotonic()
+    print(f"{name}: starting extracted package; log: {log_path}", flush=True)
+    with log_path.open("wb") as log:
+        process = subprocess.Popen(command, cwd=root, env=environment, stdin=subprocess.DEVNULL,
+                                   stdout=log, stderr=subprocess.STDOUT, **options)
         try:
-            deadline = time.monotonic() + 20
             while True:
                 if process.poll() is not None:
-                    raise RuntimeError("Executable exited before startup: " + process.communicate()[0].decode(errors="replace"))
+                    raise RuntimeError(f"Launcher exited before startup: {process.returncode}")
                 try:
                     config = json.loads(request("/api/config"))
                     break
-                except (URLError, TimeoutError, ConnectionError):
-                    if time.monotonic() >= deadline:
-                        raise TimeoutError("Packaged application did not start within 20 seconds.")
-                    time.sleep(0.2)
+                except OSError:
+                    if time.monotonic() - started >= timeout:
+                        raise TimeoutError(f"Package did not start within {timeout} seconds")
+                    time.sleep(0.5)
             token = config["token"]
             assert isinstance(token, str) and token
             for asset in ("/", "/app.js", "/styles.css", "/jingwei-wordmark.svg"):
@@ -75,17 +92,49 @@ def main():
                     assert cropped.getpixel((0, 0)) == (0, 0, 0)
                     assert cropped.getpixel((6, 6)) == (255, 255, 255)
             request("/api/shutdown", b"")
-            output, _ = process.communicate(timeout=10)
-            assert process.returncode == 0, output.decode(errors="replace")
-            print("Packaged application passed: assets, import, native source, crop, ZIP export and clean shutdown.")
+            process.wait(timeout=15)
+            assert process.returncode == 0, f"Launcher exited with {process.returncode}"
+            print(f"{name}: import, crop, export and clean shutdown passed in {time.monotonic() - started:.2f} s", flush=True)
+        except BaseException:
+            log.flush()
+            print(log_path.read_text(encoding="utf-8", errors="replace")[-16000:], flush=True)
+            raise
         finally:
-            if process.poll() is None:
-                process.terminate()
-                try:
-                    process.communicate(timeout=5)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.communicate()
+            stop(process)
+    if name == "offline-restart":
+        assert "First-time setup" not in log_path.read_text(encoding="utf-8", errors="replace")
+
+
+def main():
+    if len(sys.argv) != 2:
+        raise SystemExit("Usage: python tests/smoke_package.py <release.zip>")
+    archive = Path(sys.argv[1]).resolve()
+    LOGS.mkdir(parents=True, exist_ok=True)
+    environment = dict(os.environ, CI="1", PYTHONUTF8="1", PYTHONUNBUFFERED="1")
+    for key in ("PYTHONPATH", "PYTHONHOME"):
+        environment.pop(key, None)
+    with tempfile.TemporaryDirectory(prefix="CFP Crop package ") as temporary:
+        with zipfile.ZipFile(archive) as bundle:
+            bundle.extractall(temporary)
+        folders = list(Path(temporary).iterdir())
+        assert len(folders) == 1 and folders[0].is_dir(), "Expected one application folder"
+        root = folders[0]
+        assert not (root / ".venv").exists() and not (root / ".bootstrap").exists()
+        run_launcher(root, "first-install", environment, 600)
+        python = root / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+        base_prefix = subprocess.check_output([str(python), "-c", "import sys; print(sys.base_prefix)"], text=True).strip()
+        assert Path(base_prefix).resolve().is_relative_to((root / ".bootstrap/python").resolve()), "Expected local managed Python"
+        marker = root / ".venv/keep.txt"
+        marker.write_text("Preserve the existing environment.")
+        for key in list(environment):
+            if key.lower() in {"http_proxy", "https_proxy", "all_proxy", "no_proxy"}:
+                environment.pop(key)
+        environment.update(UV_OFFLINE="1", PIP_NO_INDEX="1", HTTP_PROXY="http://127.0.0.1:9",
+                           HTTPS_PROXY="http://127.0.0.1:9", ALL_PROXY="http://127.0.0.1:9",
+                           NO_PROXY="127.0.0.1,localhost")
+        run_launcher(root, "offline-restart", environment, 60)
+        assert marker.read_text() == "Preserve the existing environment."
+    print("Release ZIP passed: independent managed Python, first install, offline restart and crop/export.")
 
 
 if __name__ == "__main__":

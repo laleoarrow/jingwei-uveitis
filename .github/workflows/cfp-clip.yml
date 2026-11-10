@@ -14,6 +14,7 @@ permissions:
 jobs:
   package:
     runs-on: windows-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: tools/cfp-clip
@@ -25,7 +26,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: python -m pip install -r requirements-build.txt
+      - run: python -m pip install -r requirements.txt
       - run: python -m unittest discover -s tests
       - run: node --check static/app.js
       - name: Install browser test tools
@@ -36,11 +37,11 @@ jobs:
         run: node tests/browser.cjs
         env:
           NODE_PATH: ${{ github.workspace }}/tools/cfp-clip/build/browser/node_modules
-      - run: python build_release.py --native
-      - name: Check packaged Windows app
-        run: python tests/smoke_package.py "build/native/JingWei-CFP-Crop.exe"
+      - run: python build_release.py
+      - name: Check extracted package and offline restart
+        run: python tests/smoke_package.py "dist/JingWei-CFP-Crop-v1.0.0.zip"
       - uses: actions/upload-artifact@v4
         with:
-          name: CFP-Crop-Windows
-          path: tools/cfp-clip/dist/*.zip
+          name: CFP-Crop
+          path: tools/cfp-clip/dist/JingWei-CFP-Crop-v1.0.0.zip
           if-no-files-found: error
