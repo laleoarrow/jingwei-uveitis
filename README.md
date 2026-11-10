@@ -12,7 +12,7 @@ JingWei predicts retinal vascular leakage (RVL) in uveitis from a single optical
   <a href="#2-start-jingwei"><img align="texttop" alt="Platforms macOS Windows Linux" src="https://img.shields.io/badge/Platforms-macOS%20%7C%20Windows%20%7C%20Linux-2D6F58?style=for-the-badge&amp;logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI%2BPHBhdGggZmlsbD0id2hpdGUiIGZpbGwtcnVsZT0iZXZlbm9kZCIgZD0iTTMgM2gxOGEyIDIgMCAwIDEgMiAydjEyYTIgMiAwIDAgMS0yIDJoLTh2Mmg0djJIN3YtMmg0di0ySDNhMiAyIDAgMCAxLTItMlY1YTIgMiAwIDAgMSAyLTJabTAgMnYxMmgxOFY1SDNaIi8%2BPC9zdmc%2B&amp;logoColor=white&amp;labelColor=334B49"></a>
 </p>
 
-<p>
+<p align="center">
   <a href="https://laleoarrow.github.io/jingwei-uveitis/">Online demo</a> · <a href="https://github.com/laleoarrow/jingwei-uveitis/releases/tag/v1.0.0">Download</a> · <a href="#installation">Installation</a> · <a href="#3-configure-the-weights">Model weights</a> · <a href="#use">Use</a>
 </p>
 
@@ -133,6 +133,7 @@ Remote services require internet access and receive only the modality, RVL Score
 |---|---|
 | macOS cannot verify `start.command` | If you downloaded JingWei from this repository, open **System Settings → Privacy & Security** after the blocked launch. Under **Security**, select **Open Anyway** for `start.command`, then confirm **Open**. Double-click the launcher again. See [Apple’s instructions](https://support.apple.com/en-us/102445). |
 | Installation stops during a download | Check your internet connection and run the launcher again. |
+| I have widefield CFP images | Crop them with [JingWei CFP Crop](#optional-cfp-cropping-tool), then import the cropped images into JingWei as **CFP**. |
 | Weights are not found | Check the file path for the selected modality in Settings and select **Save changes**. The other modality is optional. |
 | The browser does not open | Keep the terminal running and open its displayed address, usually **http://127.0.0.1:8765/**, rather than opening `index.html`. |
 | The app is already running | Use the existing browser page. To restart, press **Ctrl+C** in the previous terminal, then run the launcher again. |
@@ -145,6 +146,12 @@ For other problems, [open an issue](https://github.com/laleoarrow/jingwei-uveiti
 **System status** in Settings refreshes every five seconds. It normally shows **Service: Online**, **Environment: Ready** (required packages present), and **Activity: Idle** (no task running). Active stages (analyzing, heatmap and refining) show elapsed time. Weight labels distinguish files found from models loaded; compatibility is checked when loading.
 
 </details>
+
+## Optional CFP cropping tool
+
+**JingWei CFP Crop v1.0.0** is an optional, independent tool for macula-centred cropping of widefield CFP images. Download the [Windows app](https://github.com/laleoarrow/jingwei-uveitis/releases/download/v1.0.0/JingWei-CFP-Crop-v1.0.0-Windows-amd64.zip) or [source package](https://github.com/laleoarrow/jingwei-uveitis/releases/download/v1.0.0/JingWei-CFP-Crop-v1.0.0-source.zip); no JingWei installation or model weights are needed.
+
+Extract the Windows ZIP and open **JingWei-CFP-Crop.exe**. Choose images, mark **optic disc → macular centre**, select **Keep crop**, then **Export crops**. See the [tool README](tools/cfp-clip/README.md) for source-package startup and optional API assistance.
 
 ## License
 

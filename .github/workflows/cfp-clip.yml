@@ -1,0 +1,46 @@
+name: CFP Crop packages
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'tools/cfp-clip/**'
+      - '.github/workflows/cfp-clip.yml'
+  pull_request:
+    paths:
+      - 'tools/cfp-clip/**'
+      - '.github/workflows/cfp-clip.yml'
+permissions:
+  contents: read
+jobs:
+  package:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: tools/cfp-clip
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: python -m pip install -r requirements-build.txt
+      - run: python -m unittest discover -s tests
+      - run: node --check static/app.js
+      - name: Install browser test tools
+        run: |
+          npm install --prefix build/browser --no-save --package-lock=false playwright@1.56.1
+          node build/browser/node_modules/playwright/cli.js install chromium
+      - name: Check point placement, zoom, pan and export
+        run: node tests/browser.cjs
+        env:
+          NODE_PATH: ${{ github.workspace }}/tools/cfp-clip/build/browser/node_modules
+      - run: python build_release.py --native
+      - name: Check packaged Windows app
+        run: python tests/smoke_package.py "build/native/JingWei-CFP-Crop.exe"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CFP-Crop-Windows
+          path: tools/cfp-clip/dist/*.zip
+          if-no-files-found: error
