@@ -1,13 +1,15 @@
 import base64
 import io
 import json
+from http.server import BaseHTTPRequestHandler, HTTPServer
+import threading
 import unittest
 from unittest.mock import patch
 from urllib.error import HTTPError, URLError
 
 from PIL import Image
 
-from landmarks import API_URL, DEFAULT_MODEL, LandmarkError, parse_response, suggest_landmarks
+from landmarks import DEFAULT_BASE_URL, DEFAULT_MODEL, LandmarkError, parse_response, reported_usage, responses_url, suggest_landmarks
 
 
 def response_for(points):
@@ -21,13 +23,17 @@ class LandmarkTests(unittest.TestCase):
     def setUp(self):
         self.image = Image.new("RGB", (2001, 1001), "orange")
         self.points = {"optic_disc": {"x": 0.6, "y": 0.4}, "macula": {"x": 0.4, "y": 0.5}}
+        clock = patch("landmarks.perf_counter", return_value=100)
+        self.clock = clock.start()
+        self.addCleanup(clock.stop)
 
     def test_request_and_native_pixel_coordinates(self):
         with patch("landmarks.urlopen", return_value=io.BytesIO(json.dumps(response_for(self.points)).encode())) as call:
             result = suggest_landmarks(self.image, "sk-test-only")
-        self.assertEqual(result, {"first": [1200, 400], "center": [800, 500], "model": DEFAULT_MODEL})
+        self.assertEqual(result, {"first": [1200, 400], "center": [800, 500], "model": DEFAULT_MODEL,
+                                  "elapsed_seconds": 0, "usage": None})
         request = call.call_args.args[0]
-        self.assertEqual(request.full_url, API_URL)
+        self.assertEqual(request.full_url, DEFAULT_BASE_URL + "/responses")
         self.assertEqual(request.headers["Authorization"], "Bearer sk-test-only")
         self.assertEqual(call.call_args.kwargs["timeout"], 90)
         payload = json.loads(request.data)
@@ -43,6 +49,55 @@ class LandmarkTests(unittest.TestCase):
             self.assertFalse(preview.getexif())
         self.assertEqual(self.image.size, (2001, 1001))
 
+    def test_elapsed_and_usage_are_reported_without_double_counting(self):
+        response = response_for(self.points)
+        response["usage"] = {
+            "input_tokens": 2000, "output_tokens": 300, "total_tokens": 2300,
+            "input_tokens_details": {"cached_tokens": 500},
+            "output_tokens_details": {"reasoning_tokens": 250},
+        }
+        self.clock.side_effect = [10.125, 12.875]
+        with patch("landmarks.urlopen", return_value=io.BytesIO(json.dumps(response).encode())):
+            result = suggest_landmarks(self.image, "sk-test-only")
+        self.assertEqual(result["elapsed_seconds"], 2.75)
+        self.assertEqual(result["usage"], {
+            "input_tokens": 2000, "output_tokens": 300, "total_tokens": 2300,
+            "cached_input_tokens": 500, "reasoning_tokens": 250,
+        })
+
+    def test_missing_usage_is_not_estimated(self):
+        for response in ({}, {"usage": None}, {"usage": {}}, {"usage": "unknown"}):
+            self.assertIsNone(reported_usage(response))
+        self.assertEqual(reported_usage({"usage": {"input_tokens": 5, "output_tokens": 7}}), {
+            "input_tokens": 5, "output_tokens": 7, "total_tokens": None,
+            "cached_input_tokens": None, "reasoning_tokens": None,
+        })
+        self.assertEqual(reported_usage({"usage": {
+            "input_tokens": True, "output_tokens": -1, "total_tokens": "12",
+            "input_tokens_details": {"cached_tokens": 0}, "output_tokens_details": [],
+        }}), {
+            "input_tokens": None, "output_tokens": None, "total_tokens": None,
+            "cached_input_tokens": 0, "reasoning_tokens": None,
+        })
+
+    def test_billed_unusable_response_retains_usage(self):
+        null_points = response_for({"optic_disc": None, "macula": None})
+        invalid_points = response_for({"optic_disc": {"x": 2, "y": 0.4}, "macula": self.points["macula"]})
+        refusal = {"status": "completed", "output": [{"type": "message", "content": [{"type": "refusal"}]}]}
+        incomplete = {"status": "incomplete", "output": []}
+        for response in (null_points, invalid_points, refusal, incomplete):
+            response["usage"] = {"input_tokens": 200, "output_tokens": 500, "total_tokens": 700}
+            self.clock.side_effect = [10.125, 12.875]
+            with self.subTest(response=response), patch("landmarks.urlopen", return_value=io.BytesIO(json.dumps(response).encode())):
+                with self.assertRaises(LandmarkError) as caught:
+                    suggest_landmarks(self.image, "sk-test-only")
+            self.assertEqual(caught.exception.metadata, {
+                "model": DEFAULT_MODEL, "elapsed_seconds": 2.75,
+                "usage": {"input_tokens": 200, "output_tokens": 500, "total_tokens": 700,
+                          "cached_input_tokens": None, "reasoning_tokens": None},
+            })
+            self.assertNotIn("sk-test-only", str(caught.exception.metadata))
+
     def test_custom_model_and_edges(self):
         self.points = {"optic_disc": {"x": 0, "y": 0}, "macula": {"x": 1, "y": 1}}
         with patch("landmarks.urlopen", return_value=io.BytesIO(json.dumps(response_for(self.points)).encode())) as call:
@@ -50,9 +105,78 @@ class LandmarkTests(unittest.TestCase):
         self.assertEqual(result["center"], [2000, 1000])
         self.assertEqual(json.loads(call.call_args.args[0].data)["model"], "gpt-6-sol-custom")
 
+    def test_custom_service_and_symbol_key(self):
+        with patch("landmarks.urlopen", return_value=io.BytesIO(json.dumps(response_for(self.points)).encode())) as call:
+            result = suggest_landmarks(self.image, "provider.test+key/=", "vendor/vision-model", "https://api.example.test/custom/v1/")
+        request = call.call_args.args[0]
+        self.assertEqual(request.full_url, "https://api.example.test/custom/v1/responses")
+        self.assertEqual(request.headers["Authorization"], "Bearer provider.test+key/=")
+        self.assertEqual(result["model"], "vendor/vision-model")
+        self.assertNotIn("provider.test+key/=", str(result))
+
+    def test_base_url_normalization_and_validation(self):
+        for supplied, expected in (
+            ("https://api.example.test/v1", "https://api.example.test/v1/responses"),
+            ("https://api.example.test/v1/", "https://api.example.test/v1/responses"),
+            ("https://api.example.test/v1/responses", "https://api.example.test/v1/responses"),
+            ("https://api.example.test/v1/responses/", "https://api.example.test/v1/responses"),
+            ("http://127.0.0.1:8080/v1", "http://127.0.0.1:8080/v1/responses"),
+        ):
+            with self.subTest(supplied=supplied):
+                self.assertEqual(responses_url(supplied), expected)
+        with patch("landmarks.urlopen") as call:
+            for supplied in (None, "", "api.example.test", "/v1", "file:///tmp/test", "ftp://host/v1", "https:///v1",
+                             "https://user:secret@host/v1", "https://host/v1?key=secret", "https://host/v1?", "https://host/v1#fragment",
+                             "https://host:bad/v1", "https://host:99999/v1", "https://[bad/v1", "https://host/white space",
+                             "https://host/line\nbreak", "https://host\\other/v1"):
+                with self.subTest(supplied=supplied), self.assertRaises(ValueError) as caught:
+                    suggest_landmarks(self.image, "provider-key", base_url=supplied)
+                self.assertNotIn("secret", str(caught.exception))
+            call.assert_not_called()
+
+    def test_redirect_never_forwards_credentials(self):
+        received = []
+
+        class Destination(BaseHTTPRequestHandler):
+            def do_GET(self):
+                received.append(self.headers.get("Authorization"))
+                self.send_response(200)
+                self.end_headers()
+
+            do_POST = do_GET
+
+            def log_message(self, *_args):
+                pass
+
+        with HTTPServer(("127.0.0.1", 0), Destination) as destination:
+            class Redirect(BaseHTTPRequestHandler):
+                def do_POST(self):
+                    self.rfile.read(int(self.headers["Content-Length"]))
+                    self.send_response(302)
+                    self.send_header("Location", f"http://127.0.0.1:{destination.server_port}/responses")
+                    self.end_headers()
+
+                def log_message(self, *_args):
+                    pass
+
+            with HTTPServer(("127.0.0.1", 0), Redirect) as source:
+                threads = [threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
+                           for server in (source, destination)]
+                for thread in threads:
+                    thread.start()
+                try:
+                    with self.assertRaisesRegex(LandmarkError, "redirected"):
+                        suggest_landmarks(self.image, "provider-secret", base_url=f"http://127.0.0.1:{source.server_port}/v1")
+                    self.assertEqual(received, [])
+                finally:
+                    source.shutdown()
+                    destination.shutdown()
+                    for thread in threads:
+                        thread.join()
+
     def test_invalid_settings_do_not_send_an_image(self):
         with patch("landmarks.urlopen") as call:
-            for key in (None, "", "sk-test\nInjected: true", "x" * 257, 123):
+            for key in (None, "", "sk-test\nInjected: true", "key with spaces", "key\x00", "密钥", "x" * 513, 123):
                 with self.subTest(key=key), self.assertRaises(ValueError):
                     suggest_landmarks(self.image, key)
             for model in (None, "", "bad model", "x" * 101, 123):
@@ -88,20 +212,26 @@ class LandmarkTests(unittest.TestCase):
 
     def test_provider_errors_are_sanitized(self):
         for code, status in ((400, 400), (401, 400), (403, 400), (404, 400), (429, 429), (500, 502)):
-            error = HTTPError(API_URL, code, "sk-test-only", {}, io.BytesIO(b"sk-test-only private response"))
+            error = HTTPError(DEFAULT_BASE_URL + "/responses", code, "sk-test-only", {}, io.BytesIO(b"sk-test-only private response"))
+            self.clock.side_effect = [10.125, 12.875]
             with self.subTest(code=code), patch("landmarks.urlopen", side_effect=error):
                 with self.assertRaises(LandmarkError) as caught:
                     suggest_landmarks(self.image, "sk-test-only")
                 self.assertEqual(caught.exception.status, status)
                 self.assertNotIn("sk-test-only", str(caught.exception))
+                self.assertNotIn("OpenAI", str(caught.exception))
+                self.assertEqual(caught.exception.metadata, {"model": DEFAULT_MODEL, "elapsed_seconds": 2.75, "usage": None})
 
     def test_network_and_unreadable_response(self):
         for error in (TimeoutError("private connection detail"), URLError("private connection detail")):
+            self.clock.side_effect = [10.125, 12.875]
             with patch("landmarks.urlopen", side_effect=error):
                 with self.assertRaises(LandmarkError) as caught:
                     suggest_landmarks(self.image, "sk-test-only")
                 self.assertEqual(caught.exception.status, 504)
                 self.assertNotIn("private", str(caught.exception))
+                self.assertEqual(caught.exception.metadata, {"model": DEFAULT_MODEL, "elapsed_seconds": 2.75, "usage": None})
+        self.clock.side_effect = [10.125, 12.875]
         with patch("landmarks.urlopen", return_value=io.BytesIO(b"not JSON")):
             with self.assertRaisesRegex(LandmarkError, "unreadable response"):
                 suggest_landmarks(self.image, "sk-test-only")

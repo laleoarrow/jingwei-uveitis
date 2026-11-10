@@ -11,7 +11,7 @@ For the source package, install Python 3.10–3.13, then double-click `start.com
 ## Crop
 
 1. Choose a folder or individual images. Folder import reads only the top level.
-2. Click **1 · Optic disc**, then **2 · Macular centre**, or use **Auto-place points** with your OpenAI API key (default model: `gpt-6-sol`).
+2. Click **1 · Optic disc**, then **2 · Macular centre**, or use **Auto-place points** with your API key (default model: `gpt-6-sol`).
 3. Drag either point to adjust it. Zoom with **+ / −** or the mouse wheel, select **Move** to pan, and use **Fit** to see the whole image. Review the preview, then select **Keep crop & next**.
 4. Select **Export crops** to download the retained crops as a ZIP. Extract it to obtain the `<folder>_clip` directory with the original filenames.
 
@@ -19,7 +19,9 @@ The second point is the centre; the radius is **1.5 × the disc–macula distanc
 
 Select **Export crops** before closing to save your work. Each session starts a new image set; original files are preserved.
 
-**Auto-place:** Open **API settings**, enter your key, and select **Auto-place points**. This sends the current image to OpenAI and returns two suggested points for review; it does not keep a crop automatically. The key is used only for this browser session and is not saved. API requests are billed to your OpenAI account.
+**Auto-place:** Open **API settings** and enter the base URL, key and model for a service compatible with the Responses API and image input. The default URL is `https://api.openai.com/v1`; it can be changed to your provider's address. **Auto-place points** sends the current image to that service and returns two suggested points for review; it does not keep a crop automatically. The key is used only for this browser session and is not saved. API requests use your provider account.
+
+The latest request's duration and reported token usage appear below **Auto-place points**, with input/output counts. Usage is also shown when the model's response could not supply usable points; unavailable counts are left blank.
 
 **Keys:** Enter keeps the crop and advances; ← / → navigate; Backspace clears the points. Hold Space and drag to pan. Zoom and pan leave the original image coordinates unchanged.
 

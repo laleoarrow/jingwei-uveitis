@@ -12,7 +12,7 @@ import sysconfig
 import zipfile
 
 ROOT = Path(__file__).resolve().parent
-VERSION = "0.2.0"
+VERSION = "0.2.1"
 NAME = f"JingWei-CFP-Crop-v{VERSION}"
 SOURCE_FILES = (
     "app.py", "core.py", "landmarks.py", "README.md", "NOTICE.md", "LICENSE", "AGENTS.md",

@@ -145,18 +145,39 @@ class ServerTests(unittest.TestCase):
         response = {"status": "completed", "output": [{"type": "message", "content": [
             {"type": "output_text", "text": '{"optic_disc":{"x":0.6,"y":0.4},"macula":{"x":0.4,"y":0.5}}'},
         ]}]}
-        settings = {"api_key": "sk-test-only"}
-        with patch("landmarks.urlopen", return_value=io.BytesIO(json.dumps(response).encode())) as call:
+        settings = {"api_key": "sk-test-only", "base_url": "https://api.example.test/v1"}
+        with patch("landmarks.urlopen", return_value=io.BytesIO(json.dumps(response).encode())) as call, \
+                patch("landmarks.perf_counter", side_effect=[10, 12.5]):
             self.assertEqual(self.request("POST", base + "/landmarks", settings, token=False)[0], 403)
             call.assert_not_called()
             status, _, body = self.request("POST", base + "/landmarks", settings)
         self.assertEqual(status, 200, body)
-        self.assertEqual(json.loads(body), {"first": [23.4, 11.600000000000001], "center": [15.600000000000001, 14.5], "model": "gpt-6-sol"})
+        self.assertEqual(call.call_args.args[0].full_url, "https://api.example.test/v1/responses")
+        self.assertEqual(json.loads(body), {"first": [23.4, 11.600000000000001], "center": [15.600000000000001, 14.5],
+                                           "model": "gpt-6-sol", "elapsed_seconds": 2.5, "usage": None})
         self.assertEqual(self.request("GET", base + "/crop")[0], 404)
         self.assertEqual(self.request("GET", "/api/export")[0], 400)
         self.assertNotIn("sk-test-only", str(self.server.records))
         self.assertNotIn(b"sk-test-only", self.request("GET", "/api/config")[2])
         self.assertEqual(self.request("POST", base + "/landmarks", {})[0], 400)
+
+    def test_landmark_failure_retains_reported_usage(self):
+        record = self.import_image()
+        response = {"status": "incomplete", "output": [], "usage": {
+            "input_tokens": 1200, "output_tokens": 4096, "total_tokens": 5296,
+            "output_tokens_details": {"reasoning_tokens": 4096},
+        }}
+        with patch("landmarks.urlopen", return_value=io.BytesIO(json.dumps(response).encode())), \
+                patch("landmarks.perf_counter", side_effect=[10, 16.25]):
+            status, _, body = self.request("POST", f"/api/images/{record['id']}/landmarks", {"api_key": "sk-test-only"})
+        self.assertEqual(status, 502)
+        result = json.loads(body)
+        self.assertIn("did not finish", result["error"])
+        self.assertEqual(result["elapsed_seconds"], 6.25)
+        self.assertEqual(result["model"], "gpt-6-sol")
+        self.assertEqual(result["usage"], {"input_tokens": 1200, "output_tokens": 4096, "total_tokens": 5296,
+                                          "cached_input_tokens": None, "reasoning_tokens": 4096})
+        self.assertNotIn(b"sk-test-only", body)
 
     def test_shutdown_cleans_temporary_images(self):
         with ClipServer(static_root=Path(self.static.name)) as server:

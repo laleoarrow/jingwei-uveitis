@@ -13,8 +13,11 @@ async function api(path, options = {}) {
   const response = await fetch(path, { ...options, headers: { 'X-Clip-Token': state.token, ...options.headers } });
   if (!response.ok) {
     let message = `The request could not be completed (${response.status}).`;
-    try { message = (await response.json()).error || message; } catch (_) { /* Non-JSON service failure. */ }
-    throw new Error(message);
+    let metadata = null;
+    try { metadata = await response.json(); message = metadata.error || message; } catch (_) { /* Non-JSON service failure. */ }
+    const error = new Error(message);
+    error.apiMetadata = metadata;
+    throw error;
   }
   return response;
 }
@@ -31,7 +34,7 @@ function status(message, error = false) {
 function controls() {
   const item = current();
   const blocked = state.busy || !state.token || state.closed;
-  for (const id of ['chooseFolder', 'chooseImages', 'quitButton']) $(id).disabled = blocked;
+  for (const id of ['chooseFolder', 'chooseImages', 'quitButton', 'apiSettingsButton']) $(id).disabled = blocked;
   $('exportButton').disabled = blocked || !keptCount();
   $('previousButton').disabled = blocked || state.index <= 0;
   $('nextButton').disabled = blocked || state.index < 0 || state.index >= state.images.length - 1;
@@ -42,6 +45,7 @@ function controls() {
   $('zoomInButton').disabled = noImage || state.view.zoom >= 8;
   $('zoomOutButton').disabled = noImage || state.view.zoom <= 1;
   $('apiKey').disabled = blocked;
+  $('apiBaseUrl').disabled = blocked;
   $('apiModel').disabled = blocked;
   $('zoomLevel').textContent = `${Number(state.view.zoom.toFixed(2))}×`;
   $('moveButton').setAttribute('aria-pressed', String(state.moveMode));
@@ -49,7 +53,6 @@ function controls() {
   $('sourceCanvas').classList.toggle('dragging', !!state.pointer && state.pointer.kind !== 'place');
   $('sourceStage').classList.toggle('busy', state.busy);
   $('exportCount').textContent = keptCount();
-  $('exportCount').classList.toggle('hidden', !keptCount());
   $('queueSummary').textContent = state.images.length ? `${state.images.length} image${state.images.length === 1 ? '' : 's'} · ${keptCount()} kept` : 'No images selected';
   $('imagePosition').textContent = item ? `${state.index + 1} / ${state.images.length}` : '—';
   $('firstStep').classList.toggle('active', !!item && !item.points.length);
@@ -138,7 +141,7 @@ function pointPrompt() {
   if (!item.points.length) status('Click the optic disc.');
   else if (item.points.length === 1) status('Click the macular centre.');
   else if (!radius(item.points)) status('The two landmarks must be at different positions. Drag either point to adjust.', true);
-  else status(item.kept && samePoints(item.points, item.savedPoints) ? 'This crop is kept. Export it with the other kept crops.' : 'Review the two points. Drag either point to adjust, then keep the crop.');
+  else status(item.kept && samePoints(item.points, item.savedPoints) ? 'Crop kept.' : 'Drag either point to adjust, then keep the crop.');
 }
 
 const radius = points => points?.length === 2 ? 1.5 * Math.hypot(points[0][0] - points[1][0], points[0][1] - points[1][1]) : 0;
@@ -161,12 +164,37 @@ function render() {
   $('sourceEmpty').classList.toggle('hidden', hasImage);
   $('sourceCanvas').classList.toggle('hidden', !hasImage);
   $('sourceStage').classList.toggle('loaded', hasImage);
-  $('filename').textContent = item?.name || 'Original images are preserved.';
+  $('filename').textContent = item?.name || 'No image selected';
+  $('filename').title = item?.name || '';
   $('dimensions').textContent = item ? `${item.width} × ${item.height} px` : '';
   $('savedPreview').classList.add('hidden');
   if (hasImage) drawSource();
   drawPreview();
+  drawApiUsage();
   controls();
+}
+
+function drawApiUsage() {
+  const request = current()?.lastApi;
+  const summary = $('apiUsageSummary'), detail = $('apiUsageDetail');
+  $('apiUsage').title = '';
+  if (!request) { summary.textContent = '—'; detail.textContent = '—'; return; }
+  const seconds = request.pending ? (performance.now() - request.startedAt) / 1000 : request.elapsed_seconds;
+  const time = Number.isFinite(seconds) ? `${seconds.toFixed(1)} s` : '—';
+  if (request.pending) {
+    summary.textContent = `${time} · Locating points…`;
+    detail.textContent = 'Token usage pending';
+    return;
+  }
+  const count = value => Number.isInteger(value) && value >= 0 ? value.toLocaleString('en-US') : '—';
+  const usage = request.usage;
+  summary.textContent = `${time} · ${count(usage?.total_tokens)} tokens`;
+  detail.textContent = usage ? `Input ${count(usage.input_tokens)} · Output ${count(usage.output_tokens)}` : 'Token usage unavailable';
+  $('apiUsage').title = [request.model, usage && `Cached input ${count(usage.cached_input_tokens)} · Reasoning ${count(usage.reasoning_tokens)}`].filter(Boolean).join('\n');
+}
+
+function apiMetadata(data, model, elapsed) {
+  return { model: data?.model || model, elapsed_seconds: Number.isFinite(data?.elapsed_seconds) ? data.elapsed_seconds : elapsed, usage: data?.usage || null };
 }
 
 function drawSource() {
@@ -310,25 +338,45 @@ function fitImage() {
 async function autoPlacePoints() {
   if ($('autoPlaceButton').disabled) return;
   const apiKey = $('apiKey').value.trim();
+  const baseUrl = $('apiBaseUrl').value.trim() || 'https://api.openai.com/v1';
   const model = $('apiModel').value.trim() || 'gpt-6-sol';
   if (!apiKey) {
-    $('apiSettings').open = true;
-    $('apiKey').focus();
-    status('Add your OpenAI API key to auto-place the two points.');
+    openApiSettings();
+    status('Add your API key to auto-place the two points.');
     return;
   }
   await run(async () => {
+    const item = current();
+    const startedAt = performance.now();
+    item.lastApi = { model, pending: true, startedAt };
+    drawApiUsage();
+    const timer = setInterval(drawApiUsage, 100);
     status('Locating the optic disc and macular centre…');
-    $('autoPlaceButton').textContent = 'Locating points…';
+    $('autoPlaceButton').setAttribute('aria-busy', 'true');
     try {
-      const response = await jsonPost(`/api/images/${current().id}/landmarks`, { api_key: apiKey, model });
+      const response = await jsonPost(`/api/images/${item.id}/landmarks`, { api_key: apiKey, base_url: baseUrl, model });
       const points = await response.json();
-      current().points = [points.first, points.center];
-      current().suggested = true;
+      item.lastApi = apiMetadata(points, model, (performance.now() - startedAt) / 1000);
+      item.points = [points.first, points.center];
+      item.suggested = true;
       releaseUrl('cropUrl'); render();
-      status('Suggested points are ready. Review and drag either point to adjust, then keep the crop.');
-    } finally { $('autoPlaceButton').textContent = 'Auto-place points ↗'; }
+      status('Suggested points are ready. Drag either point to adjust.');
+    } catch (error) {
+      item.lastApi = apiMetadata(error.apiMetadata, model, (performance.now() - startedAt) / 1000);
+      throw error;
+    } finally {
+      clearInterval(timer);
+      $('autoPlaceButton').setAttribute('aria-busy', 'false');
+      drawApiUsage();
+    }
   });
+}
+
+function openApiSettings() {
+  state.spaceDown = false;
+  $('apiSettings').showModal();
+  $('apiKey').focus();
+  controls();
 }
 
 function resetPoints() {
@@ -394,6 +442,9 @@ $('zoomOutButton').addEventListener('click', () => zoomImage(1 / 1.25));
 $('fitButton').addEventListener('click', fitImage);
 $('moveButton').addEventListener('click', () => { state.moveMode = !state.moveMode; controls(); });
 $('autoPlaceButton').addEventListener('click', autoPlacePoints);
+$('apiSettingsButton').addEventListener('click', openApiSettings);
+$('closeApiSettings').addEventListener('click', () => $('apiSettings').close());
+$('apiSettings').addEventListener('close', () => $('apiSettingsButton').focus());
 $('resetButton').addEventListener('click', resetPoints);
 $('previousButton').addEventListener('click', () => run(() => showImage(state.index - 1)));
 $('nextButton').addEventListener('click', () => run(() => showImage(state.index + 1)));
@@ -411,6 +462,7 @@ $('quitButton').addEventListener('click', async () => {
   });
 });
 document.addEventListener('keydown', event => {
+  if ($('apiSettings').open) return;
   if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.target.matches('input, textarea, select, button, [contenteditable="true"]')) return;
   if (event.code === 'Space' && state.image && !state.busy && !state.closed) {
     event.preventDefault(); state.spaceDown = true; controls(); return;
@@ -428,7 +480,7 @@ new ResizeObserver(() => { if (state.image) drawSource(); }).observe($('sourceSt
     const response = await fetch('/api/config');
     if (!response.ok) throw new Error('The local tool is unavailable. Restart CFP Crop and reopen its page.');
     state.token = (await response.json()).token;
-    status('Choose a folder or select images to begin. Only the top level of a folder is opened.');
+    status('Choose a folder or select images to begin.');
   } catch (error) { status(error.message, true); }
   controls();
 })();

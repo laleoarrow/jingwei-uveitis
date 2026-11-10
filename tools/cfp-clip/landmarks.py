@@ -1,4 +1,4 @@
-"""Optional OpenAI landmark suggestions; credentials are used for one request."""
+"""Optional Responses API landmark suggestions; credentials are used for one request."""
 from __future__ import annotations
 
 import base64
@@ -6,13 +6,15 @@ import io
 import json
 import math
 import re
+from time import perf_counter
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.parse import urlsplit, urlunsplit
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from PIL import Image
 
 DEFAULT_MODEL = "gpt-6-sol"
-API_URL = "https://api.openai.com/v1/responses"
+DEFAULT_BASE_URL = "https://api.openai.com/v1"
 TIMEOUT_SECONDS = 90
 POINT_SCHEMA = {
     "type": ["object", "null"],
@@ -40,6 +42,50 @@ class LandmarkError(ValueError):
     def __init__(self, message: str, status: int = 502):
         super().__init__(message)
         self.status = status
+        self.metadata: dict = {}
+
+
+class NoRedirect(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None  # Send credentials only to the endpoint selected by the user.
+
+
+urlopen = build_opener(NoRedirect).open
+
+
+def responses_url(base_url: object) -> str:
+    message = "Enter an HTTP(S) API base URL without credentials, a query or a fragment."
+    if not isinstance(base_url, str) or not re.fullmatch(r"[\x21-\x7e]{1,2048}", base_url.strip()):
+        raise ValueError(message)
+    value = base_url.strip()
+    try:
+        parsed = urlsplit(value)
+        if (parsed.scheme not in {"http", "https"} or not parsed.netloc or not parsed.hostname
+                or parsed.username is not None or parsed.password is not None
+                or "?" in value or "#" in value or "\\" in value):
+            raise ValueError(message)
+        parsed.port  # Validate an explicitly supplied port.
+    except ValueError:
+        raise ValueError(message) from None
+    endpoint = urlunsplit((parsed.scheme, parsed.netloc, parsed.path.rstrip("/"), "", ""))
+    return endpoint if endpoint.endswith("/responses") else endpoint + "/responses"
+
+
+def reported_usage(response: object) -> dict | None:
+    usage = response.get("usage") if isinstance(response, dict) else None
+    if not isinstance(usage, dict):
+        return None
+    input_details = usage.get("input_tokens_details") or {}
+    output_details = usage.get("output_tokens_details") or {}
+    counts = {
+        "input_tokens": usage.get("input_tokens"),
+        "output_tokens": usage.get("output_tokens"),
+        "total_tokens": usage.get("total_tokens"),
+        "cached_input_tokens": input_details.get("cached_tokens") if isinstance(input_details, dict) else None,
+        "reasoning_tokens": output_details.get("reasoning_tokens") if isinstance(output_details, dict) else None,
+    }
+    counts = {name: value if type(value) is int and value >= 0 else None for name, value in counts.items()}
+    return counts if any(value is not None for value in counts.values()) else None
 
 
 def pixel_point(value: object, size: tuple[int, int]) -> list[float]:
@@ -77,12 +123,14 @@ def parse_response(response: object, size: tuple[int, int]) -> tuple[list[float]
         raise LandmarkError("The model returned an unreadable suggestion. Please try again or place the points manually.") from None
 
 
-def suggest_landmarks(image: Image.Image, api_key: object, model: object = DEFAULT_MODEL) -> dict:
-    if not isinstance(api_key, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,256}", api_key.strip()):
-        raise ValueError("Enter a valid OpenAI API key.")
-    if not isinstance(model, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,99}", model.strip()):
+def suggest_landmarks(image: Image.Image, api_key: object, model: object = DEFAULT_MODEL,
+                      base_url: object = DEFAULT_BASE_URL) -> dict:
+    if not isinstance(api_key, str) or not re.fullmatch(r"[\x21-\x7e]{1,512}", api_key.strip()):
+        raise ValueError("Enter a valid API key.")
+    if not isinstance(model, str) or not re.fullmatch(r"[\x21-\x7e]{1,100}", model.strip()):
         raise ValueError("Enter a valid model name.")
     model = model.strip()
+    endpoint = responses_url(base_url)
     preview = image.convert("RGB")
     preview.thumbnail((1600, 1600), Image.Resampling.LANCZOS)
     buffer = io.BytesIO()
@@ -104,23 +152,34 @@ def suggest_landmarks(image: Image.Image, api_key: object, model: object = DEFAU
             }, "required": ["optic_disc", "macula"], "additionalProperties": False},
         }},
     }
-    request = Request(API_URL, json.dumps(payload).encode(), headers={
+    request = Request(endpoint, json.dumps(payload).encode(), headers={
         "Authorization": "Bearer " + api_key.strip(), "Content-Type": "application/json",
     })
+    started = perf_counter()
+    result = None
     try:
-        with urlopen(request, timeout=TIMEOUT_SECONDS) as response:
-            result = json.load(response)
-    except HTTPError as exc:
-        if exc.code in {401, 403}:
-            raise LandmarkError("OpenAI rejected this API key or its permissions. Check API settings.", 400) from None
-        if exc.code == 429:
-            raise LandmarkError("OpenAI reported a usage limit. Check API quota or try again later.", 429) from None
-        if exc.code in {400, 404}:
-            raise LandmarkError("OpenAI could not use this model for image suggestions. Check the model name and access.", 400) from None
-        raise LandmarkError("OpenAI is temporarily unavailable. Please try again later.") from None
-    except (TimeoutError, URLError, OSError):
-        raise LandmarkError("Could not reach OpenAI in time. Check your connection and try again.", 504) from None
-    except (ValueError, UnicodeError):
-        raise LandmarkError("OpenAI returned an unreadable response. Please try again.") from None
-    first, center = parse_response(result, image.size)
-    return {"first": first, "center": center, "model": model}
+        try:
+            with urlopen(request, timeout=TIMEOUT_SECONDS) as response:
+                result = json.load(response)
+        except HTTPError as exc:
+            if 300 <= exc.code < 400:
+                raise LandmarkError("The API endpoint redirected this request. Enter the final API base URL.", 400) from None
+            if exc.code in {401, 403}:
+                raise LandmarkError("The API rejected this key or its permissions. Check API settings.", 400) from None
+            if exc.code == 429:
+                raise LandmarkError("The API reported a usage limit. Check your quota or try again later.", 429) from None
+            if exc.code in {400, 404}:
+                raise LandmarkError("The API could not process this image request. Check the base URL, model and access.", 400) from None
+            raise LandmarkError("The API service is temporarily unavailable. Please try again later.") from None
+        except (TimeoutError, URLError, OSError):
+            raise LandmarkError("Could not reach the API in time. Check the base URL and your connection.", 504) from None
+        except (ValueError, UnicodeError):
+            raise LandmarkError("The API returned an unreadable response. Please try again.") from None
+        finally:
+            metadata = {"model": model, "elapsed_seconds": round(perf_counter() - started, 3),
+                        "usage": reported_usage(result)}
+        first, center = parse_response(result, image.size)
+    except LandmarkError as exc:
+        exc.metadata = metadata
+        raise
+    return {"first": first, "center": center, **metadata}

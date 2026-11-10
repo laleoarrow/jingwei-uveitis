@@ -36,6 +36,14 @@ const path = require('node:path');
     function near(actual, expected, tolerance = 1) {
       assert.ok(Math.abs(actual - expected) < tolerance, `${actual} != ${expected}`);
     }
+    const layout = () => page.evaluate(() => Object.fromEntries(
+      ['sourceStage', 'previewStage', 'keepButton', 'autoPlaceButton', 'apiUsage', 'exportButton'].map(id => {
+        const box = document.getElementById(id).getBoundingClientRect();
+        return [id, [box.x + scrollX, box.y + scrollY, box.width, box.height]];
+      })));
+    function unchangedLayout(actual, expected) {
+      for (const id of Object.keys(expected)) actual[id].forEach((value, index) => near(value, expected[id][index], .1));
+    }
 
     await page.goto(base); await ready();
     const fixture = await page.evaluate(() => {
@@ -53,30 +61,54 @@ const path = require('node:path');
     await page.waitForFunction(() => !!state.image && !state.busy);
     assert.deepEqual(await page.evaluate(() => [state.image.naturalWidth, state.image.naturalHeight]), [512, 384]);
 
-    await page.locator('#apiSettings summary').click();
+    const idleLayout = await layout();
+    await page.locator('#apiSettingsButton').click();
+    assert.equal(await page.locator('#apiSettings').isVisible(), true);
+    unchangedLayout(await layout(), idleLayout);
     assert.equal(await page.locator('#apiModel').inputValue(), 'gpt-6-sol');
+    assert.equal(await page.locator('#apiBaseUrl').inputValue(), 'https://api.openai.com/v1');
+    await page.locator('#apiBaseUrl').fill('https://vision.example.test/v1');
     await page.locator('#apiKey').fill('test-key-not-a-secret');
+    await page.locator('#closeApiSettings').click();
+    unchangedLayout(await layout(), idleLayout);
     let calls = 0;
+    let releaseSuggestion, requestReceived;
+    const suggestionPending = new Promise(resolve => { releaseSuggestion = resolve; });
+    const requested = new Promise(resolve => { requestReceived = resolve; });
     await page.route('**/api/images/*/landmarks', async route => {
       calls++;
       const body = route.request().postDataJSON();
       assert.equal(body.api_key, 'test-key-not-a-secret');
       assert.equal(body.model, 'gpt-6-sol');
-      await route.fulfill({ json: { first: [320, 180], center: [220, 195], model: body.model } });
+      assert.equal(body.base_url, 'https://vision.example.test/v1');
+      requestReceived();
+      await suggestionPending;
+      await route.fulfill({ json: { first: [320, 180], center: [220, 195], model: body.model,
+        elapsed_seconds: 9.2, usage: { input_tokens: 1234, output_tokens: 456,
+          total_tokens: 1690, cached_input_tokens: 100, reasoning_tokens: 300 } } });
     });
     assert.equal(calls, 0);
-    await page.locator('#autoPlaceButton').click(); await ready();
+    await page.locator('#autoPlaceButton').click(); await requested;
+    assert.equal(await page.evaluate(() => state.busy), true);
+    unchangedLayout(await layout(), idleLayout);
+    releaseSuggestion(); await ready();
     assert.equal(calls, 1);
     assert.deepEqual(await points(), [[320, 180], [220, 195]]);
     assert.equal(await page.locator('#exportButton').isDisabled(), true);
     assert.equal(await page.locator('#keepButton').isEnabled(), true);
     assert.equal(await page.evaluate(() => localStorage.length + sessionStorage.length), 0);
+    assert.match(await page.locator('#apiUsageSummary').innerText(), /9\.2 s.*1,690/);
+    assert.match(await page.locator('#apiUsageDetail').innerText(), /1,234.*456/);
+    unchangedLayout(await layout(), idleLayout);
 
     // API input editing must not trigger canvas keyboard shortcuts.
+    await page.locator('#apiSettingsButton').click();
     await page.locator('#apiModel').focus(); await page.keyboard.press('Backspace');
     assert.equal((await points()).length, 2);
     await page.locator('#apiModel').fill('gpt-6-sol');
-    await page.locator('#apiSettings summary').click();
+    await page.keyboard.press('Escape');
+    assert.equal(await page.locator('#apiSettings').isVisible(), false);
+    unchangedLayout(await layout(), idleLayout);
     const initial = await points();
     await page.locator('#zoomInButton').click();
     await page.locator('#zoomInButton').click();
@@ -117,10 +149,21 @@ const path = require('node:path');
     // Failed suggestions must leave the user's landmarks intact.
     await page.unroute('**/api/images/*/landmarks');
     await page.route('**/api/images/*/landmarks', route => route.fulfill({ status: 400,
-      json: { error: 'OpenAI could not locate both landmarks.' } }));
+      json: { error: 'The model could not locate both landmarks.', model: 'gpt-6-sol',
+        elapsed_seconds: 1.4, usage: { input_tokens: 40, output_tokens: 80, total_tokens: 120 } } }));
     await page.locator('#autoPlaceButton').click(); await ready();
     assert.match(await page.locator('#status').innerText(), /could not locate/);
     assert.deepEqual(await points(), adjusted);
+    assert.match(await page.locator('#apiUsageSummary').innerText(), /1\.4 s.*120/);
+    unchangedLayout(await layout(), idleLayout);
+
+    await page.unroute('**/api/images/*/landmarks');
+    await page.route('**/api/images/*/landmarks', route => route.fulfill({ status: 504,
+      json: { error: 'Could not reach the API in time.', elapsed_seconds: 90, usage: null } }));
+    await page.locator('#autoPlaceButton').click(); await ready();
+    assert.doesNotMatch(await page.locator('#apiUsageSummary').innerText(), /120|1,690/);
+    assert.deepEqual(await points(), adjusted);
+    unchangedLayout(await layout(), idleLayout);
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.waitForFunction(() => document.getElementById('sourceCanvas').width > 0);
@@ -131,6 +174,7 @@ const path = require('node:path');
     await page.locator('#keepButton').click(); await ready();
     assert.deepEqual((await cropRequest).postDataJSON(), { first: adjusted[0], center: adjusted[1] });
     assert.equal(await page.locator('#savedPreview').isVisible(), true);
+    unchangedLayout(await layout(), idleLayout);
     const downloadEvent = page.waitForEvent('download');
     await page.locator('#exportButton').click();
     const download = await downloadEvent;
@@ -140,7 +184,7 @@ const path = require('node:path');
     await page.reload(); await ready();
     assert.equal(await page.locator('#apiKey').inputValue(), '');
     assert.deepEqual(errors, []);
-    console.log('Browser passed: chooser, API suggestions/failure, key lifetime, native-resolution points, drag, zoom, pan, responsive layout and ZIP export.');
+    console.log('Browser passed: stable layout through settings/loading/results/errors/export, actual usage display, chooser, key lifetime, native-resolution points, drag, zoom, pan and responsive layout.');
   } finally {
     if (browser) await browser.close();
     server.kill();

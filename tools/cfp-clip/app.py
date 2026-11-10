@@ -19,7 +19,7 @@ from urllib.parse import parse_qs, urlsplit
 from PIL import Image, UnidentifiedImageError
 
 from core import SUPPORTED_SUFFIXES, load_image, make_circular_clip
-from landmarks import DEFAULT_MODEL, LandmarkError, suggest_landmarks
+from landmarks import DEFAULT_BASE_URL, DEFAULT_MODEL, LandmarkError, suggest_landmarks
 
 MAX_UPLOAD_BYTES = 64 * 1024 * 1024
 STATIC_ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent)) / "static"
@@ -142,7 +142,7 @@ class ClipHandler(BaseHTTPRequestHandler):
         try:
             self.route(method, request.path, parse_qs(request.query))
         except LandmarkError as exc:
-            self.send_json({"error": str(exc)}, exc.status)
+            self.send_json({"error": str(exc), **exc.metadata}, exc.status)
         except (ValueError, KeyError, UnidentifiedImageError, Image.DecompressionBombError,
                 Image.DecompressionBombWarning, OSError) as exc:
             message = str(exc) if isinstance(exc, ValueError) else "This image could not be read or saved. Please choose a supported image."
@@ -167,7 +167,8 @@ class ClipHandler(BaseHTTPRequestHandler):
             elif method == "POST" and parts[3] == "landmarks":
                 settings = self.read_json()
                 with Image.open(record["source"]) as image:
-                    suggestion = suggest_landmarks(image, settings.get("api_key"), settings.get("model", DEFAULT_MODEL))
+                    suggestion = suggest_landmarks(image, settings.get("api_key"), settings.get("model", DEFAULT_MODEL),
+                                                   settings.get("base_url", DEFAULT_BASE_URL))
                 self.send_json(suggestion)
             elif method == "GET" and parts[3] in {"preview", "crop"}:
                 source = record["source"] if parts[3] == "preview" else record["output"]
