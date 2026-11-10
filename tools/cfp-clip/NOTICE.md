@@ -24,4 +24,3 @@ The wordmark is copied from JingWei's `static/jingwei-wordmark.svg`: fixed vecto
 lettering, with no font program. New JingWei material follows the repository's
 CC BY-NC 4.0 licence. Pillow, Python and PyInstaller retain their own licences;
 native packages include their available distribution notices.
-

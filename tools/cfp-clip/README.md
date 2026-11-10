@@ -32,7 +32,6 @@ python build_release.py             # standalone source ZIP
 python build_release.py --native    # native package on the current OS
 ```
 
-Outputs are under `dist/`. Build Windows packages on Windows and macOS packages on macOS, or run the **CFP Crop packages** workflow. Attach the resulting ZIPs separately to a JingWei release.
+Outputs are under `dist/`. Build macOS packages on macOS; use Windows or the **CFP Crop packages** workflow for the Windows package. Attach the resulting ZIPs separately to a JingWei release.
 
 This directory is self-contained, with its own version, environment, tests and release schedule. See [AGENTS.md](AGENTS.md) for maintenance, [NOTICE.md](NOTICE.md) for provenance and [LICENSE](LICENSE) for the JingWei additions' licence.
-

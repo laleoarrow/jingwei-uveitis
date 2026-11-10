@@ -22,4 +22,3 @@ exit /b 0
 echo Could not start CFP Crop. Use Python 3.10 or later, or the standalone download.
 pause
 exit /b 1
-

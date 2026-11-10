@@ -21,4 +21,3 @@ repository.
 - Exclude temporary images, environments, builds and archives from Git.
   Do not add `__init__.py` to this directory or `tests/`: main-app unittest
   discovery must not start importing the optional tool.
-

@@ -11,4 +11,3 @@ if ! .venv/bin/python -c 'import PIL; assert PIL.__version__ == "11.3.0"' >/dev/
   .venv/bin/python -m pip install -r requirements.txt
 fi
 exec .venv/bin/python app.py "$@"
-

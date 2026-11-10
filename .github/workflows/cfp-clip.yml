@@ -9,11 +9,7 @@ permissions:
   contents: read
 jobs:
   package:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-14, windows-latest]
-    runs-on: ${{ matrix.os }}
+    runs-on: windows-latest
     defaults:
       run:
         working-directory: tools/cfp-clip
@@ -29,15 +25,10 @@ jobs:
       - run: python -m unittest discover -s tests
       - run: node --check static/app.js
       - run: python build_release.py --native
-      - name: Check packaged macOS app
-        if: runner.os == 'macOS'
-        run: python tests/smoke_package.py "build/native/JingWei CFP Crop.app/Contents/MacOS/JingWei CFP Crop"
       - name: Check packaged Windows app
-        if: runner.os == 'Windows'
         run: python tests/smoke_package.py "build/native/JingWei-CFP-Crop.exe"
       - uses: actions/upload-artifact@v4
         with:
-          name: CFP-Crop-${{ matrix.os }}
+          name: CFP-Crop-Windows
           path: tools/cfp-clip/dist/*.zip
           if-no-files-found: error
-
