@@ -64,6 +64,8 @@ def main():
             source = io.BytesIO()
             Image.new("RGB", (20, 20), "white").save(source, format="PNG")
             record = json.loads(request("/api/images?name=smoke.png", source.getvalue()))
+            with Image.open(io.BytesIO(request(f"/api/images/{record['id']}/source"))) as original:
+                assert original.size == (20, 20)
             result = json.loads(request(f"/api/images/{record['id']}/crop", {"first": [10, 6], "center": [10, 10]}))
             assert (result["width"], result["height"]) == (12, 12)
             with zipfile.ZipFile(io.BytesIO(request("/api/export"))) as archive:
@@ -75,7 +77,7 @@ def main():
             request("/api/shutdown", b"")
             output, _ = process.communicate(timeout=10)
             assert process.returncode == 0, output.decode(errors="replace")
-            print("Packaged application passed: assets, import, crop, ZIP export and clean shutdown.")
+            print("Packaged application passed: assets, import, native source, crop, ZIP export and clean shutdown.")
         finally:
             if process.poll() is None:
                 process.terminate()

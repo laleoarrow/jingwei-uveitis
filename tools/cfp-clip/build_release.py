@@ -12,14 +12,14 @@ import sysconfig
 import zipfile
 
 ROOT = Path(__file__).resolve().parent
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 NAME = f"JingWei-CFP-Crop-v{VERSION}"
 SOURCE_FILES = (
-    "app.py", "core.py", "README.md", "NOTICE.md", "LICENSE", "AGENTS.md",
+    "app.py", "core.py", "landmarks.py", "README.md", "NOTICE.md", "LICENSE", "AGENTS.md",
     "requirements.txt", "requirements-build.txt", "start.command", "start.bat",
     "build_release.py", "static/index.html", "static/styles.css", "static/app.js",
     "static/jingwei-wordmark.svg", "tests/test_core.py", "tests/test_server.py",
-    "tests/smoke_package.py",
+    "tests/test_landmarks.py", "tests/browser.cjs", "tests/smoke_package.py",
 )
 
 

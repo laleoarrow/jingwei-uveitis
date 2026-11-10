@@ -2,7 +2,8 @@
 
 const $ = id => document.getElementById(id);
 const state = { token: '', images: [], index: -1, image: null, busy: false, closed: false,
-  folder: 'images', revision: 0, exportedRevision: 0, sourceUrl: null, cropUrl: null, rect: null };
+  folder: 'images', revision: 0, exportedRevision: 0, sourceUrl: null, cropUrl: null, rect: null,
+  view: { zoom: 1, center: [0, 0] }, moveMode: false, spaceDown: false, pointer: null };
 const supported = new Set(['jpg', 'jpeg', 'png', 'bmp', 'tif', 'tiff', 'gif', 'webp']);
 const current = () => state.images[state.index];
 const keptCount = () => state.images.filter(item => item.kept).length;
@@ -36,6 +37,16 @@ function controls() {
   $('nextButton').disabled = blocked || state.index < 0 || state.index >= state.images.length - 1;
   $('resetButton').disabled = blocked || !item?.points.length;
   $('keepButton').disabled = blocked || !state.image || item?.points.length !== 2 || radius(item.points) <= 0;
+  const noImage = blocked || !state.image;
+  for (const id of ['autoPlaceButton', 'fitButton', 'moveButton']) $(id).disabled = noImage;
+  $('zoomInButton').disabled = noImage || state.view.zoom >= 8;
+  $('zoomOutButton').disabled = noImage || state.view.zoom <= 1;
+  $('apiKey').disabled = blocked;
+  $('apiModel').disabled = blocked;
+  $('zoomLevel').textContent = `${Number(state.view.zoom.toFixed(2))}×`;
+  $('moveButton').setAttribute('aria-pressed', String(state.moveMode));
+  $('sourceCanvas').classList.toggle('moving', state.moveMode || state.spaceDown);
+  $('sourceCanvas').classList.toggle('dragging', !!state.pointer && state.pointer.kind !== 'place');
   $('sourceStage').classList.toggle('busy', state.busy);
   $('exportCount').textContent = keptCount();
   $('exportCount').classList.toggle('hidden', !keptCount());
@@ -45,8 +56,8 @@ function controls() {
   $('firstStep').classList.toggle('done', !!item?.points.length);
   $('secondStep').classList.toggle('active', item?.points.length === 1);
   $('secondStep').classList.toggle('done', item?.points.length === 2);
-  $('firstStatus').textContent = item?.points.length ? 'Selected' : 'Select first';
-  $('secondStatus').textContent = item?.points.length === 2 ? 'Selected' : 'Crop centre';
+  $('firstStatus').textContent = item?.points.length ? (item.suggested ? 'Suggested' : 'Selected') : 'Select first';
+  $('secondStatus').textContent = item?.points.length === 2 ? (item.suggested ? 'Suggested' : 'Selected') : 'Crop centre';
 }
 
 async function run(action) {
@@ -106,12 +117,15 @@ async function importFiles(fileList, folderMode) {
 async function showImage(index) {
   state.index = index;
   state.image = null;
+  state.pointer = null;
+  state.rect = null;
+  state.view = { zoom: 1, center: [current().width / 2, current().height / 2] };
   releaseUrl('cropUrl');
   render();
   const item = current();
   status(`Opening ${item.name}…`);
   try {
-    const response = await api(`/api/images/${item.id}/preview`);
+    const response = await api(`/api/images/${item.id}/source`);
     state.image = await loadImage(await response.blob(), 'sourceUrl');
     render();
     pointPrompt();
@@ -123,12 +137,13 @@ function pointPrompt() {
   if (!item) return;
   if (!item.points.length) status('Click the optic disc.');
   else if (item.points.length === 1) status('Click the macular centre.');
-  else if (!radius(item.points)) status('The two landmarks must be at different positions. Reset the points and try again.', true);
-  else status(item.kept && samePoints(item.points, item.savedPoints) ? 'This crop is kept. Export it with the other kept crops.' : 'Review the crop, then keep it or click again to start over.');
+  else if (!radius(item.points)) status('The two landmarks must be at different positions. Drag either point to adjust.', true);
+  else status(item.kept && samePoints(item.points, item.savedPoints) ? 'This crop is kept. Export it with the other kept crops.' : 'Review the two points. Drag either point to adjust, then keep the crop.');
 }
 
 const radius = points => points?.length === 2 ? 1.5 * Math.hypot(points[0][0] - points[1][0], points[0][1] - points[1][1]) : 0;
 const samePoints = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
 
 function cropBounds(item) {
   const r = radius(item.points);
@@ -163,9 +178,14 @@ function drawSource() {
   const ctx = canvas.getContext('2d');
   ctx.scale(dpr, dpr);
   const item = current();
-  const scale = Math.min((box.width - 32) / item.width, (box.height - 32) / item.height);
+  const scale = Math.min((box.width - 32) / item.width, (box.height - 32) / item.height) * state.view.zoom;
   const width = item.width * scale, height = item.height * scale;
-  const x = (box.width - width) / 2, y = (box.height - height) / 2;
+  const halfWidth = Math.min(item.width / 2, (box.width / 2 - 16) / scale);
+  const halfHeight = Math.min(item.height / 2, (box.height / 2 - 16) / scale);
+  state.view.center[0] = clamp(state.view.center[0], halfWidth, item.width - halfWidth);
+  state.view.center[1] = clamp(state.view.center[1], halfHeight, item.height - halfHeight);
+  const x = box.width / 2 - state.view.center[0] * scale;
+  const y = box.height / 2 - state.view.center[1] * scale;
   state.rect = { x, y, width, height, scale };
   ctx.drawImage(state.image, x, y, width, height);
   ctx.save(); ctx.beginPath(); ctx.rect(x, y, width, height); ctx.clip();
@@ -209,33 +229,122 @@ function drawPreview() {
   ctx.drawImage(state.image, -bounds.left, -bounds.top, item.width, item.height);
 }
 
-function selectPoint(event) {
-  if (state.busy || !state.image || !state.rect || state.closed) return;
+function canvasPosition(event) {
   const box = $('sourceCanvas').getBoundingClientRect();
-  const rect = state.rect;
-  const x = (event.clientX - box.left - rect.x) / rect.scale;
-  const y = (event.clientY - box.top - rect.y) / rect.scale;
+  return [event.clientX - box.left, event.clientY - box.top];
+}
+
+function imagePosition(position) {
+  return [(position[0] - state.rect.x) / state.rect.scale, (position[1] - state.rect.y) / state.rect.scale];
+}
+
+function pointsChanged() {
+  current().suggested = false;
+  releaseUrl('cropUrl'); render(); pointPrompt();
+}
+
+function pointerDown(event) {
+  if (event.button !== 0 || state.busy || !state.image || !state.rect || state.closed || state.pointer) return;
+  event.preventDefault();
+  $('sourceCanvas').focus({ preventScroll: true });
+  const position = canvasPosition(event);
   const item = current();
-  if (x < 0 || y < 0 || x >= item.width || y >= item.height) return;
-  if (item.points.length === 2) item.points = [];
-  item.points.push([x, y]);
-  releaseUrl('cropUrl');
-  render(); pointPrompt();
+  const index = item.points.findIndex(([x, y]) => Math.hypot(position[0] - state.rect.x - x * state.rect.scale, position[1] - state.rect.y - y * state.rect.scale) <= 15);
+  const kind = index >= 0 ? 'point' : state.moveMode || state.spaceDown ? 'pan' : 'place';
+  state.pointer = { id: event.pointerId, kind, index, start: position, center: [...state.view.center], moved: false };
+  $('sourceCanvas').setPointerCapture(event.pointerId);
+  controls();
+}
+
+function pointerMove(event) {
+  const pointer = state.pointer;
+  if (state.busy || state.closed || !pointer || pointer.id !== event.pointerId) return;
+  const position = canvasPosition(event);
+  const dx = position[0] - pointer.start[0], dy = position[1] - pointer.start[1];
+  if (Math.hypot(dx, dy) > 3) pointer.moved = true;
+  if (!pointer.moved) return;
+  if (pointer.kind === 'point') {
+    const item = current();
+    const [x, y] = imagePosition(position);
+    item.points[pointer.index] = [clamp(x, 0, item.width - 1), clamp(y, 0, item.height - 1)];
+    pointsChanged();
+  } else if (pointer.kind === 'pan') {
+    state.view.center = [pointer.center[0] - dx / state.rect.scale, pointer.center[1] - dy / state.rect.scale];
+    drawSource();
+  }
+}
+
+function pointerUp(event) {
+  const pointer = state.pointer;
+  if (!pointer || pointer.id !== event.pointerId) return;
+  if (!state.busy && !state.closed && event.type === 'pointerup' && pointer.kind === 'place' && !pointer.moved) {
+    const item = current();
+    const [x, y] = imagePosition(canvasPosition(event));
+    if (item.points.length < 2 && x >= 0 && y >= 0 && x < item.width && y < item.height) {
+      item.points.push([x, y]);
+      pointsChanged();
+    } else if (item.points.length === 2) pointPrompt();
+  }
+  state.pointer = null;
+  if ($('sourceCanvas').hasPointerCapture(event.pointerId)) $('sourceCanvas').releasePointerCapture(event.pointerId);
+  controls();
+}
+
+function zoomImage(factor, anchor) {
+  if (state.busy || state.closed || !state.image || !state.rect || state.pointer) return;
+  const box = $('sourceCanvas').getBoundingClientRect();
+  anchor ||= [box.width / 2, box.height / 2];
+  const point = imagePosition(anchor);
+  const zoom = clamp(state.view.zoom * factor, 1, 8);
+  const scale = state.rect.scale * zoom / state.view.zoom;
+  state.view = { zoom, center: [point[0] - (anchor[0] - box.width / 2) / scale, point[1] - (anchor[1] - box.height / 2) / scale] };
+  drawSource(); controls();
+}
+
+function fitImage() {
+  if (state.busy || state.closed || !state.image) return;
+  state.view = { zoom: 1, center: [current().width / 2, current().height / 2] };
+  drawSource(); controls();
+}
+
+async function autoPlacePoints() {
+  if ($('autoPlaceButton').disabled) return;
+  const apiKey = $('apiKey').value.trim();
+  const model = $('apiModel').value.trim() || 'gpt-6-sol';
+  if (!apiKey) {
+    $('apiSettings').open = true;
+    $('apiKey').focus();
+    status('Add your OpenAI API key to auto-place the two points.');
+    return;
+  }
+  await run(async () => {
+    status('Locating the optic disc and macular centre…');
+    $('autoPlaceButton').textContent = 'Locating points…';
+    try {
+      const response = await jsonPost(`/api/images/${current().id}/landmarks`, { api_key: apiKey, model });
+      const points = await response.json();
+      current().points = [points.first, points.center];
+      current().suggested = true;
+      releaseUrl('cropUrl'); render();
+      status('Suggested points are ready. Review and drag either point to adjust, then keep the crop.');
+    } finally { $('autoPlaceButton').textContent = 'Auto-place points ↗'; }
+  });
 }
 
 function resetPoints() {
   if (state.busy || !current() || state.closed) return;
   current().points = [];
-  releaseUrl('cropUrl'); render(); pointPrompt();
+  pointsChanged();
 }
 
 async function keepCrop() {
   if ($('keepButton').disabled) return;
   await run(async () => {
     const item = current();
+    const points = item.points.map(point => [...point]);
     status('Keeping crop at original resolution…');
-    await jsonPost(`/api/images/${item.id}/crop`, { first: item.points[0], center: item.points[1] });
-    item.kept = true; item.savedPoints = item.points.map(point => [...point]); state.revision++;
+    await jsonPost(`/api/images/${item.id}/crop`, { first: points[0], center: points[1] });
+    item.kept = true; item.savedPoints = points; state.revision++;
     if (state.index < state.images.length - 1) {
       await showImage(state.index + 1);
       status(`Crop kept. ${current().points.length ? 'Review the next photograph.' : 'Click the optic disc on the next photograph.'}`);
@@ -271,7 +380,20 @@ for (const [id, folderMode] of [['folderInput', true], ['imageInput', false]]) {
     if (files.length) await importFiles(files, folderMode);
   });
 }
-$('sourceCanvas').addEventListener('pointerdown', selectPoint);
+$('sourceCanvas').addEventListener('pointerdown', pointerDown);
+$('sourceCanvas').addEventListener('pointermove', pointerMove);
+$('sourceCanvas').addEventListener('pointerup', pointerUp);
+$('sourceCanvas').addEventListener('pointercancel', pointerUp);
+$('sourceCanvas').addEventListener('wheel', event => {
+  if (!state.image || state.busy || state.closed) return;
+  event.preventDefault();
+  zoomImage(Math.exp(-event.deltaY * (event.deltaMode === 1 ? .025 : .002)), canvasPosition(event));
+}, { passive: false });
+$('zoomInButton').addEventListener('click', () => zoomImage(1.25));
+$('zoomOutButton').addEventListener('click', () => zoomImage(1 / 1.25));
+$('fitButton').addEventListener('click', fitImage);
+$('moveButton').addEventListener('click', () => { state.moveMode = !state.moveMode; controls(); });
+$('autoPlaceButton').addEventListener('click', autoPlacePoints);
 $('resetButton').addEventListener('click', resetPoints);
 $('previousButton').addEventListener('click', () => run(() => showImage(state.index - 1)));
 $('nextButton').addEventListener('click', () => run(() => showImage(state.index + 1)));
@@ -282,6 +404,7 @@ $('quitButton').addEventListener('click', async () => {
   await run(async () => {
     await jsonPost('/api/shutdown', {});
     state.closed = true; state.exportedRevision = state.revision;
+    $('apiKey').value = '';
     releaseUrl('sourceUrl'); releaseUrl('cropUrl');
     state.image = null; render();
     status('The tool is closed and temporary images have been cleared. You can close this tab.');
@@ -289,10 +412,15 @@ $('quitButton').addEventListener('click', async () => {
 });
 document.addEventListener('keydown', event => {
   if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.target.matches('input, textarea, select, button, [contenteditable="true"]')) return;
+  if (event.code === 'Space' && state.image && !state.busy && !state.closed) {
+    event.preventDefault(); state.spaceDown = true; controls(); return;
+  }
   const actions = { Enter: 'keepButton', ArrowLeft: 'previousButton', ArrowRight: 'nextButton', Backspace: 'resetButton' };
   const id = actions[event.key];
-  if (id) { event.preventDefault(); if (!$(id).disabled) $(id).click(); }
+  if (id) { event.preventDefault(); if (!state.pointer && !$(id).disabled) $(id).click(); }
 });
+document.addEventListener('keyup', event => { if (event.code === 'Space') { state.spaceDown = false; controls(); } });
+window.addEventListener('blur', () => { state.spaceDown = false; state.pointer = null; controls(); });
 window.addEventListener('beforeunload', event => { if (unexported() && !state.closed) { event.preventDefault(); event.returnValue = ''; } });
 new ResizeObserver(() => { if (state.image) drawSource(); }).observe($('sourceStage'));
 (async () => {

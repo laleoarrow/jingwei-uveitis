@@ -5,6 +5,7 @@ from pathlib import Path
 import tempfile
 import threading
 import unittest
+from unittest.mock import patch
 from urllib.parse import quote
 import zipfile
 
@@ -123,6 +124,39 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(headers["Content-Type"], "image/png")
         self.assertEqual(Image.open(io.BytesIO(data)).format, "PNG")
+
+    def test_source_for_zoom_preserves_native_pixels(self):
+        image = Image.new("RGB", (2001, 1001), "orange")
+        buffer = io.BytesIO()
+        image.save(buffer, format="PNG")
+        record = self.import_image(data=buffer.getvalue())
+        base = f"/api/images/{record['id']}"
+        status, headers, data = self.request("GET", base + "/source")
+        self.assertEqual(status, 200)
+        self.assertEqual(headers["Content-Type"], "image/png")
+        with Image.open(io.BytesIO(data)) as source:
+            self.assertEqual(source.size, image.size)
+            self.assertEqual(source.tobytes(), image.tobytes())
+        self.assertEqual(self.request("GET", base + "/source", token=False)[0], 403)
+
+    def test_landmark_endpoint_does_not_keep_crop_or_credentials(self):
+        record = self.import_image()
+        base = f"/api/images/{record['id']}"
+        response = {"status": "completed", "output": [{"type": "message", "content": [
+            {"type": "output_text", "text": '{"optic_disc":{"x":0.6,"y":0.4},"macula":{"x":0.4,"y":0.5}}'},
+        ]}]}
+        settings = {"api_key": "sk-test-only"}
+        with patch("landmarks.urlopen", return_value=io.BytesIO(json.dumps(response).encode())) as call:
+            self.assertEqual(self.request("POST", base + "/landmarks", settings, token=False)[0], 403)
+            call.assert_not_called()
+            status, _, body = self.request("POST", base + "/landmarks", settings)
+        self.assertEqual(status, 200, body)
+        self.assertEqual(json.loads(body), {"first": [23.4, 11.600000000000001], "center": [15.600000000000001, 14.5], "model": "gpt-6-sol"})
+        self.assertEqual(self.request("GET", base + "/crop")[0], 404)
+        self.assertEqual(self.request("GET", "/api/export")[0], 400)
+        self.assertNotIn("sk-test-only", str(self.server.records))
+        self.assertNotIn(b"sk-test-only", self.request("GET", "/api/config")[2])
+        self.assertEqual(self.request("POST", base + "/landmarks", {})[0], 400)
 
     def test_shutdown_cleans_temporary_images(self):
         with ClipServer(static_root=Path(self.static.name)) as server:

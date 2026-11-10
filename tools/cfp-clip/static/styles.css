@@ -4,7 +4,7 @@ body { margin: 0; background: #fff; color: var(--ink); font: 15px/1.5 -apple-sys
 button, input { font: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: default; }
-button:focus-visible, canvas:focus-visible { outline: 2px solid #08766F; outline-offset: 4px; }
+button:focus-visible, canvas:focus-visible, summary:focus-visible, input:focus-visible { outline: 2px solid #08766F; outline-offset: 4px; }
 .hidden { display: none !important; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
 .app-header { max-width: 1400px; height: 88px; padding: 0 48px; margin: auto; display: flex; align-items: center; gap: 30px; border-bottom: 1px solid var(--line); }
@@ -38,7 +38,16 @@ h2 { margin: 0; font-size: 15px; font-weight: 550; letter-spacing: -.1px; }
 .source-stage { position: relative; background: var(--surface); border-radius: 9px; height: 410px; overflow: hidden; }
 .source-stage.loaded { background: #10201e; }
 #sourceCanvas { display: block; width: 100%; height: 100%; cursor: crosshair; touch-action: none; }
+#sourceCanvas.moving { cursor: grab; }
+#sourceCanvas.dragging { cursor: grabbing; }
 .source-stage.busy #sourceCanvas { cursor: wait; }
+.view-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 9px 0 1px; }
+.zoom-controls { display: flex; align-items: center; gap: 2px; }
+.view-button { border: 1px solid transparent; border-radius: 4px; background: none; color: #507c73; padding: 3px 8px; font-size: 12px; min-width: 27px; }
+.view-button:hover:not(:disabled), .view-button[aria-pressed="true"] { background: #EDF8F5; border-color: #c7ddda; color: #006D5B; }
+.view-button:disabled { color: #a3b0ac; }
+#zoomLevel { min-width: 39px; text-align: center; font-size: 11px; color: #6c8981; font-variant-numeric: tabular-nums; }
+.view-hint { margin-left: auto; font-size: 10px; color: #8a9e97; }
 .empty-state { display: flex; align-items: center; justify-content: center; height: 100%; padding: 24px; flex-direction: column; text-align: center; color: #72938c; }
 .empty-state svg { margin-bottom: 18px; color: #93b9b2; }
 .empty-state strong { font-size: 18px; color: #38645f; font-weight: 450; }
@@ -58,7 +67,16 @@ h2 { margin: 0; font-size: 15px; font-weight: 550; letter-spacing: -.1px; }
 .circle-guide::before, .circle-guide::after { content: ''; position: absolute; background: #A9CFD0; left: 50%; top: 50%; transform: translate(-50%, -50%); }
 .circle-guide::before { width: 13px; height: 1px; }
 .circle-guide::after { width: 1px; height: 13px; }
-.landmarks { list-style: none; padding: 0; margin: 22px 0 0; }
+.auto-tools { margin-top: 17px; }
+#autoPlaceButton { width: 100%; justify-content: space-between; padding: 8px 13px; }
+.api-settings { margin-top: 9px; font-size: 11px; color: #78928a; }
+.api-settings summary { cursor: pointer; width: fit-content; }
+.api-fields { margin-top: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 6px; background: #f8fbfa; }
+.api-fields label { display: block; color: #50766c; }
+.api-fields label + label { margin-top: 10px; }
+.api-fields input { display: block; width: 100%; min-width: 0; margin-top: 4px; padding: 7px 8px; color: var(--ink); background: #fff; border: 1px solid #cfdfdb; border-radius: 4px; font-size: 12px; }
+.api-fields p { margin: 10px 0 0; font-size: 10px; line-height: 1.6; }
+.landmarks { list-style: none; padding: 0; margin: 15px 0 0; }
 .landmarks li { display: flex; align-items: center; gap: 10px; padding: 8px 0; font-size: 13px; }
 .step-number { display: inline-flex; width: 23px; height: 23px; justify-content: center; align-items: center; border: 1px solid #c7ddda; color: #79948b; border-radius: 50%; font-size: 11px; }
 .landmarks li.active .step-number { border-color: #68a59b; color: var(--green); background: #EDF8F5; }
