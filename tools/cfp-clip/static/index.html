@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#ffffff">
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+  <title>CFP Crop · JingWei</title>
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand"><img src="/jingwei-wordmark.svg" alt="JingWei"><span lang="zh">精卫</span></div>
+    <span class="tool-name">CFP Crop</span>
+    <span class="companion-label">Companion tool</span>
+  </header>
+  <main>
+    <div class="page-heading">
+      <div><p class="eyebrow">IMAGE PREPARATION</p><h1>CFP cropping</h1><p class="subtitle">A macula-centred crop from your wide-field photograph.</p></div>
+      <button class="button button-primary" id="exportButton" type="button" disabled>Export crops<span id="exportCount" class="button-count hidden"></span><span aria-hidden="true">↓</span></button>
+    </div>
+    <div class="workspace-toolbar">
+      <div class="source-tools"><button class="button button-secondary" id="chooseFolder" type="button" disabled>Choose folder</button><button class="text-button" id="chooseImages" type="button" disabled>Choose images</button></div>
+      <span id="queueSummary" class="queue-summary">No images selected</span>
+      <input id="folderInput" type="file" webkitdirectory multiple class="visually-hidden" tabindex="-1" aria-label="Choose image folder">
+      <input id="imageInput" type="file" multiple accept=".jpg,.jpeg,.png,.bmp,.tif,.tiff,.gif,.webp" class="visually-hidden" tabindex="-1" aria-label="Choose images">
+    </div>
+    <p class="notice hidden" id="importNotice" role="status"></p>
+    <div class="workbench">
+      <section class="source-panel" aria-labelledby="sourceTitle">
+        <div class="panel-heading"><h2 id="sourceTitle">Source photograph</h2><span id="imagePosition" class="minor-label">—</span></div>
+        <div class="source-stage" id="sourceStage">
+          <div class="empty-state" id="sourceEmpty">
+            <svg width="58" height="58" viewBox="0 0 58 58" fill="none" aria-hidden="true"><rect x="8" y="10" width="42" height="38" rx="6" stroke="currentColor" stroke-width="1.2"/><circle cx="21" cy="23" r="4" stroke="currentColor" stroke-width="1.2"/><path d="m9 42 13-12 10 9 8-6 10 9" stroke="currentColor" stroke-width="1.2"/></svg>
+            <strong>Start with a photograph</strong><span>Choose a folder or select individual images.</span><small>JPG · PNG · TIFF · BMP · GIF · WEBP</small>
+          </div>
+          <canvas id="sourceCanvas" class="hidden" tabindex="0" aria-label="Source photograph. Click the optic disc, then the macular centre."></canvas>
+        </div>
+        <div class="image-meta"><span id="filename">Original images are preserved.</span><span id="dimensions"></span></div>
+        <div class="source-navigation"><button class="text-button" id="previousButton" type="button" disabled><span aria-hidden="true">←</span> Previous</button><button class="text-button" id="resetButton" type="button" disabled>Reset points</button><button class="text-button" id="nextButton" type="button" disabled>Skip <span aria-hidden="true">→</span></button></div>
+      </section>
+      <aside class="crop-panel" aria-labelledby="cropTitle">
+        <div class="panel-heading"><h2 id="cropTitle">Crop preview</h2><span id="cropState" class="minor-label">Awaiting points</span></div>
+        <div class="preview-stage" id="previewStage">
+          <div class="preview-empty" id="previewEmpty"><span class="circle-guide" aria-hidden="true"></span><span>Your crop appears here</span></div>
+          <canvas id="previewCanvas" class="hidden" aria-label="Circular crop preview"></canvas>
+          <img id="savedPreview" class="hidden" alt="Kept crop">
+        </div>
+        <ol class="landmarks" aria-label="Point selection order">
+          <li id="firstStep"><span class="step-number">1</span><span>Optic disc</span><span class="step-status" id="firstStatus">Select first</span></li>
+          <li id="secondStep"><span class="step-number">2</span><span>Macular centre</span><span class="step-status" id="secondStatus">Crop centre</span></li>
+        </ol>
+        <p class="method-note">Macula-centred crop · radius = 1.5 × disc–macula distance</p>
+        <button class="button button-primary keep-button" id="keepButton" type="button" disabled>Keep crop &amp; next <span aria-hidden="true">→</span></button>
+        <p class="export-note">Keep the crops you need, then export them as a ZIP.</p>
+      </aside>
+    </div>
+    <div class="status-line"><span class="status-dot" aria-hidden="true"></span><p id="status" role="status" aria-live="polite">Connecting to the local tool…</p></div>
+    <div class="workspace-footer"><p><kbd>Enter</kbd> Keep crop <span>·</span> <kbd>←</kbd><kbd>→</kbd> Navigate <span>·</span> <kbd>⌫</kbd> Reset points</p><span>Images stay on this computer.</span></div>
+  </main>
+  <footer class="app-footer"><span>JingWei companion tools</span><button class="text-button" id="quitButton" type="button" disabled>Quit tool</button></footer>
+</body>
+</html>

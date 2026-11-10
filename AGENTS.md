@@ -3,6 +3,11 @@
 This repository owns the local JingWei image assessment engine, browser workbench,
 clinical report layout, and the public static demo in `docs/`.
 
+`tools/cfp-clip/` is an independent optional companion with its own instructions,
+environment, tests, version and release package. Main-app work excludes this
+subtree unless explicitly requested; main-app changes do not require companion
+tests or a companion release. Never import or bundle it into the main app.
+
 - Keep the local runtime independent of the original research repository.
 - Preserve the validated image preprocessing, logits, RVL margin definition,
   classification threshold, attribution algorithms, and reference values.
